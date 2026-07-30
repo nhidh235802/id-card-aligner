@@ -1,0 +1,106 @@
+# ──────────────────────────────────────────────
+#  Python
+# ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# ──────────────────────────────────────────────
+#  Data  (never commit raw images / datasets)
+# ──────────────────────────────────────────────
+data/raw/
+data/processed/
+data/augmented/
+data/external/
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+*.mp4
+*.avi
+*.mov
+
+# Allow sample/demo images explicitly tracked
+!assets/samples/*.jpg
+!assets/samples/*.png
+!docs/images/*.jpg
+!docs/images/*.png
+
+# ──────────────────────────────────────────────
+#  Model weights & checkpoints
+# ──────────────────────────────────────────────
+*.pt
+*.pth
+*.onnx
+*.tflite
+*.engine
+*.weights
+runs/
+checkpoints/
+outputs/
+
+# Allow documented pretrained stubs
+!models/pretrained/.gitkeep
+
+# ──────────────────────────────────────────────
+#  Experiment tracking
+# ──────────────────────────────────────────────
+mlruns/
+wandb/
+lightning_logs/
+*.log
+*.csv
+
+# ──────────────────────────────────────────────
+#  Notebooks (keep .ipynb but strip outputs)
+# ──────────────────────────────────────────────
+.ipynb_checkpoints/
+# Tip: use `nbstripout` to auto-strip outputs before commit
+
+# ──────────────────────────────────────────────
+#  Annotation tools
+# ──────────────────────────────────────────────
+.labelme_cache/
+labelme_json_cache/
+
+# ──────────────────────────────────────────────
+#  IDE / OS
+# ──────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ──────────────────────────────────────────────
+#  Environment & secrets
+# ──────────────────────────────────────────────
+.env
+.env.*
+*.secret
+config/local_*.yaml
+
+# ──────────────────────────────────────────────
+#  Temporary / cache
+# ──────────────────────────────────────────────
+tmp/
+temp/
+.cache/
+*.tmp
