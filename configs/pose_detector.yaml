@@ -1,0 +1,14 @@
+# ─────────────────────────────────────────────
+# PoseDetector config
+# ─────────────────────────────────────────────
+weights: "models/pretrained/yolo11n-pose.pt"   # thay bằng model fine-tuned sau
+
+conf_threshold: 0.5
+iou_threshold: 0.45
+imgsz: 640
+
+# Sub-pixel refinement
+use_subpixel: true
+
+# Occlusion: góc có confidence < ngưỡng này sẽ bị coi là mất
+occlusion_min_conf: 0.3

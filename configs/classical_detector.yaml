@@ -1,0 +1,8 @@
+# ─────────────────────────────────────────────
+# ClassicalDetector config
+# ─────────────────────────────────────────────
+canny_low: 50
+canny_high: 150
+blur_ksize: 5
+min_area_ratio: 0.10   # thẻ phải chiếm ít nhất 10% diện tích ảnh
+poly_epsilon: 0.02
