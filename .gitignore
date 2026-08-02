@@ -35,9 +35,7 @@ data/external/
 *.avi
 *.mov
 
-# Allow sample/demo images explicitly tracked
-!assets/samples/*.jpg
-!assets/samples/*.png
+# Allow demo images explicitly tracked
 !docs/images/*.jpg
 !docs/images/*.png
 
