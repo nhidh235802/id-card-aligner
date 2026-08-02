@@ -22,20 +22,23 @@ ENV/
 # ──────────────────────────────────────────────
 #  Data  (never commit raw images / datasets)
 # ──────────────────────────────────────────────
-data/raw/
-data/processed/
-data/augmented/
-data/external/
+data/real_test/
+data/train_front/
+data/train_back/
+data/synthetic_testset_front/
+data/synthetic_testset_back/
+data/yolo_obb/
+data/yolo_pose/
 *.jpg
 *.jpeg
 *.png
 *.bmp
 *.tiff
+*.webp
 *.mp4
 *.avi
 *.mov
 
-# Allow demo images explicitly tracked
 !docs/images/*.jpg
 !docs/images/*.png
 
