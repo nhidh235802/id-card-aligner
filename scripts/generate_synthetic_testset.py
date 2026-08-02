@@ -228,6 +228,11 @@ def generate_comprehensive_dataset(card_path: str, output_base: str, samples_per
             offset_x = (canvas_size - new_w) // 2 + random.randint(-40, 40)
             offset_y = (canvas_size - new_h) // 2 + random.randint(-40, 40)
 
+            # Clamp offset để đảm bảo thẻ không vượt ra ngoài biên canvas
+            # (tránh bug âm thầm: roi bị crop → final_corners lệch so với ảnh thật)
+            offset_x = int(np.clip(offset_x, 0, canvas_size - new_w))
+            offset_y = int(np.clip(offset_y, 0, canvas_size - new_h))
+
             final_corners = scaled_corners + np.array([offset_x, offset_y], dtype=np.float32)
 
             # Ghép vào nền
