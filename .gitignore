@@ -23,6 +23,7 @@ ENV/
 #  Data  (never commit raw images / datasets)
 # ──────────────────────────────────────────────
 data/real_test/
+data/real_test_roboflow
 data/train_front/
 data/train_back/
 data/synthetic_testset_front/
