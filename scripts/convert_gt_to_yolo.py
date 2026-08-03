@@ -25,9 +25,14 @@ import json
 import shutil
 import random
 import argparse
+import sys
 import numpy as np
 from pathlib import Path
 import cv2
+
+# Import order_corners từ src
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.corner_utils import order_corners
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -47,9 +52,9 @@ def corners_to_bbox(corners: list, img_w: int, img_h: int):
 def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
     """
     YOLO-OBB format: class_id x1 y1 x2 y2 x3 y3 x4 y4
-    Thứ tự corners: [TL, TR, BR, BL] → đi theo CW, hợp lệ với OBB.
+    Chuẩn hóa thứ tự [TL, TR, BR, BL] theo vị trí hình học trên canvas.
     """
-    pts = np.array(corners, dtype=np.float32)
+    pts = order_corners(np.array(corners, dtype=np.float32))  # [TL, TR, BR, BL]
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     coords = " ".join(f"{x:.6f} {y:.6f}" for x, y in normalized)
     return f"0 {coords}"
@@ -58,12 +63,15 @@ def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
 def corners_to_pose_label(corners: list, img_w: int, img_h: int) -> str:
     """
     YOLO-Pose format: class_id cx cy w h  x1 y1 v1  x2 y2 v2  x3 y3 v3  x4 y4 v4
-    Keypoint order: [TL, TR, BR, BL] — PHẢI nhất quán toàn dataset!
-    visibility=2: keypoint nhìn thấy rõ (dùng cho ảnh không bị che)
-    visibility=1: bị che một phần (category occlusion)
+    Keypoint order: [TL, TR, BR, BL] theo vị trí hình học trên canvas.
+
+    QUAN TRỌNG: Gọi order_corners() để chuẩn hóa thứ tự trước khi ghi label.
+    Nếu không, khi thẻ xoay 90°/180°/270°, keypoint 0 sẽ không còn ở
+    góc trên-trái → model nhận tín hiệu học mâu thuẫn nhau.
     """
-    cx, cy, bw, bh = corners_to_bbox(corners, img_w, img_h)
-    pts = np.array(corners, dtype=np.float32)
+    # Chuẩn hóa thứ tự: TL=min(x+y), TR=min(y-x), BR=max(x+y), BL=max(y-x)
+    pts = order_corners(np.array(corners, dtype=np.float32))  # (4,2) [TL,TR,BR,BL]
+    cx, cy, bw, bh = corners_to_bbox(pts.tolist(), img_w, img_h)
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     kpt_str = "  ".join(f"{x:.6f} {y:.6f} 2" for x, y in normalized)
     return f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}  {kpt_str}"
@@ -131,7 +139,13 @@ def convert_sources(src_dirs: list, obb_out: str, pose_out: str, val_ratio: floa
                 dst_lbl.write_text(label_line + "\n", encoding="utf-8")
 
         # Tạo dataset.yaml
-        kpt_cfg = "\nkpt_shape: [4, 3]  # 4 keypoints, mỗi kpt có (x, y, visibility)" if task == "pose" else ""
+        if task == "pose":
+            kpt_cfg = (
+                "\nkpt_shape: [4, 3]  # 4 keypoints, mỗi kpt có (x, y, visibility)"
+                "\nflip_idx: [1, 0, 3, 2]  # Khi flip ngang: TL↔TR (0↔1), BL↔BR (3↔2)"
+            )
+        else:
+            kpt_cfg = ""
         yaml_content = f"""# YOLO-{task.upper()} Dataset — ID Card Aligner
 path: {out_dir.resolve().as_posix()}
 train: images/train
