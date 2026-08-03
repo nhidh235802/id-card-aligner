@@ -55,9 +55,25 @@ class PoseDetector(BaseDetector):
             )
 
         kpts = results[0].keypoints  # Keypoints object
-        xy = kpts.xy[0].cpu().numpy()          # (4, 2)
-        conf_per_kpt = kpts.conf[0].cpu().numpy()  # (4,)
-        box_conf = float(results[0].boxes.conf[0].cpu())
+        if kpts is None or len(kpts.xy) == 0:
+            return DetectionResult(
+                corners=np.zeros((4, 2), dtype=np.float32),
+                confidence=0.0,
+                is_occluded=True,
+            )
+
+        xy = kpts.xy[0].cpu().numpy()          # Shape (N, 2)
+        conf_per_kpt = kpts.conf[0].cpu().numpy() if kpts.conf is not None else None
+        box_conf = float(results[0].boxes.conf[0].cpu()) if len(results[0].boxes) > 0 else 0.0
+
+        # An toàn: Nếu số lượng keypoint khác 4 (do xài pretrained COCO 17 keypoints)
+        # thì coi như chưa detect được thẻ CCCD
+        if len(xy) != 4:
+            return DetectionResult(
+                corners=np.zeros((4, 2), dtype=np.float32),
+                confidence=0.0,
+                is_occluded=True,
+            )
 
         # ── Occlusion handling: góc nào conf thấp → ước tính lại ──────────
         is_occluded = bool(np.any(conf_per_kpt < self.occlusion_min_conf))

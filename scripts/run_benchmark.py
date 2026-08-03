@@ -24,12 +24,18 @@ Cách dùng:
 
 import argparse
 import json
+import sys
 import time
 import yaml
 import cv2
 import numpy as np
 from pathlib import Path
 from collections import defaultdict
+
+# Tự động thêm thư mục root vào PYTHONPATH để import module 'src' không bị lỗi
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 # ── Metrics ────────────────────────────────────────────────────────────────────
