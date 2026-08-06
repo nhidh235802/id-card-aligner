@@ -28,6 +28,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Luôn dùng python trong .venv (có đủ thư viện cv2, ultralytics,...)
+_VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
+PYTHON = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else sys.executable
+
 # Đường dẫn mặc định chuẩn
 DEFAULT_OBB_WEIGHTS = "runs/obb/runs/train/obb_finetune/weights/best.pt"
 DEFAULT_POSE_WEIGHTS = "runs/pose/runs/train/pose_finetune/weights/best.pt"
@@ -43,7 +47,7 @@ def handle_benchmark(args):
     testset_path = TESTSET_MAP.get(args.target, args.target)
 
     cmd = [
-        sys.executable, "scripts/run_benchmark.py",
+        PYTHON, "scripts/run_benchmark.py",
         "--testset", testset_path,
         "--methods", *args.methods,
     ]
@@ -62,14 +66,14 @@ def handle_benchmark(args):
 
 
 def handle_debug(args):
-    cmd = [sys.executable, "scripts/debug_classical.py", "--img", args.image]
+    cmd = [PYTHON, "scripts/debug_classical.py", "--img", args.image]
     print(f"\n🔍 Visual Debug trên ảnh: {args.image}\n")
     subprocess.run(cmd)
 
 
 def handle_verify(args):
     cmd = [
-        sys.executable, "scripts/verify_gt.py",
+        PYTHON, "scripts/verify_gt.py",
         "--data", args.data,
         "--num", str(args.num),
         "--save"
@@ -79,7 +83,7 @@ def handle_verify(args):
 
 
 def handle_align(args):
-    cmd = [sys.executable, "scripts/run_alignment.py"]
+    cmd = [PYTHON, "scripts/run_alignment.py"]
 
     if args.img:
         cmd.extend(["--img", args.img])
@@ -104,7 +108,7 @@ def handle_align(args):
 
 def handle_train(args):
     cmd = [
-        sys.executable, "scripts/train_yolo.py",
+        PYTHON, "scripts/train_yolo.py",
         "--task", args.task,
         "--epochs", str(args.epochs),
         "--model", args.model
