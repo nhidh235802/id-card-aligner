@@ -4,7 +4,7 @@ PerspectiveAligner – nhận 4 góc thẻ → warp về hình chữ nhật chu�
 Xử lý:
 - Perspective transform (homography)
 - Aspect ratio correction (CCCD chuẩn = 85.6mm × 54mm ≈ 1.5852)
-- Padding an toàn để không mất thông tin góc
+- Auto-rotate: đảm bảo output luôn là landscape (width > height)
 """
 
 import cv2
@@ -24,7 +24,7 @@ class PerspectiveAligner:
         target_width  (int)  : width ảnh output (mặc định 856)
         target_height (int)  : height ảnh output (mặc định 540)
         fix_aspect    (bool) : tự động sửa tỷ lệ nếu thẻ bị méo
-        padding       (int)  : pixel padding thêm trước khi warp (tránh mất góc)
+        auto_rotate   (bool) : tự động xoay về landscape nếu output là portrait
     """
 
     def __init__(
@@ -32,11 +32,13 @@ class PerspectiveAligner:
         target_width: int = CCCD_WIDTH_PX,
         target_height: int = CCCD_HEIGHT_PX,
         fix_aspect: bool = True,
+        auto_rotate: bool = True,
         padding: int = 0,
     ):
         self.target_width = target_width
         self.target_height = target_height
         self.fix_aspect = fix_aspect
+        self.auto_rotate = auto_rotate
         self.padding = padding
 
     def align(self, image: np.ndarray, corners: np.ndarray) -> np.ndarray:
@@ -64,7 +66,13 @@ class PerspectiveAligner:
                                      flags=cv2.INTER_LINEAR,
                                      borderMode=cv2.BORDER_REPLICATE)
 
-        # Resize về kích thước chuẩn (giữ aspect ratio)
+        # ── Bước 1: Auto-rotate về landscape ──────────────────────────────────
+        # CCCD là thẻ ngang (landscape). Nếu warp ra ảnh dọc (portrait)
+        # nghĩa là thẻ trong ảnh gốc đang bị chụp xoay 90° → xoay lại.
+        if self.auto_rotate and warped.shape[0] > warped.shape[1]:
+            warped = cv2.rotate(warped, cv2.ROTATE_90_CLOCKWISE)
+
+        # ── Bước 2: Resize về kích thước chuẩn ISO ────────────────────────────
         if self.fix_aspect:
             warped = cv2.resize(warped, (self.target_width, self.target_height),
                                 interpolation=cv2.INTER_AREA)
@@ -73,7 +81,7 @@ class PerspectiveAligner:
     def _compute_output_size(self, corners: np.ndarray):
         """
         Tính w, h output từ khoảng cách thực tế giữa các góc.
-        Cải thiện tỷ lệ khung hình: dùng trung bình 2 cạnh ngang & dọc.
+        Luôn đảm bảo w >= h để warp ban đầu không bị quá nhỏ.
         """
         tl, tr, br, bl = corners
 
@@ -84,6 +92,11 @@ class PerspectiveAligner:
         height_left  = np.linalg.norm(bl - tl)
         height_right = np.linalg.norm(br - tr)
         h = int(max(height_left, height_right))
+
+        # Đảm bảo dimension lớn hơn luôn là w (cạnh dài nhất = chiều ngang)
+        # để warp ban đầu không bị crop nội dung bất kỳ phương hướng nào
+        if w < h:
+            w, h = h, w
 
         # Aspect ratio correction: nếu tỷ lệ lệch > 5% → dùng CCCD chuẩn
         if self.fix_aspect:

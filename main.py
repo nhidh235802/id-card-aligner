@@ -102,7 +102,7 @@ def handle_align(args):
         cmd.append("--show-comparison")
 
     label = args.img or args.folder
-    print(f"\n🃏 Align thẻ CCCD từ '{label}' dùng detector={args.detector.upper()}...\n")
+    print(f"\n[ALIGN] Tu '{label}' dung detector={args.detector.upper()}...\n")
     subprocess.run(cmd)
 
 
