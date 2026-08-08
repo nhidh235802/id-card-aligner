@@ -129,8 +129,8 @@ def process_image(image_path: Path, detector, aligner: PerspectiveAligner,
         print(f"  ❌ [{image_path.name}] Không phát hiện được thẻ (conf={result.confidence:.2f} < {conf_threshold})")
         return {"success": False, "img_path": str(image_path)}
 
-    # Chuẩn hóa thứ tự góc [TL, TR, BR, BL]
-    corners = order_corners(result.corners)
+    # Dùng trực tiếp corners từ detector (đã có thứ tự TL, TR, BR, BL chuẩn)
+    corners = result.corners
     aligned = aligner.align(image, corners)
 
     print(f"  ✅ [{image_path.name}] Detect thành công (conf={result.confidence:.2f}) → aligned {aligned.shape[1]}×{aligned.shape[0]}px")
@@ -207,7 +207,7 @@ def main():
 
     # Load detector & aligner
     detector = load_detector(args.detector, args.obb_weights, args.pose_weights)
-    aligner  = PerspectiveAligner(target_width=out_w, target_height=out_h, fix_aspect=True)
+    aligner  = PerspectiveAligner(target_width=out_w, target_height=out_h)
     save_dir = Path(args.save_dir)
 
     # Thu thập danh sách ảnh cần xử lý
