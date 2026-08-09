@@ -50,10 +50,9 @@ class OBBDetector(BaseDetector):
         best_idx = int(obb.conf.argmax())
         box_conf = float(obb.conf[best_idx].cpu())
 
-        # xywhr: (cx, cy, w, h, angle_rad)
-        xywhr = obb.xywhr[best_idx].cpu().numpy()
-        corners = obb_to_corners(xywhr)          # (4, 2)
-        corners = order_corners(corners)
+        # xyxyxyxy: P0=BR, P1=TR, P2=TL, P3=BL trong khung thẻ
+        pts = obb.xyxyxyxy[best_idx].cpu().numpy()
+        corners = pts[[2, 1, 0, 3]].astype(np.float32)  # [TL, TR, BR, BL]
 
         angle = compute_angle(corners)
         aspect = compute_aspect_ratio(corners)

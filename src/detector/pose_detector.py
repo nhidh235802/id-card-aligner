@@ -80,8 +80,8 @@ class PoseDetector(BaseDetector):
         if is_occluded:
             xy = handle_missing_corners(xy, conf_per_kpt, self.occlusion_min_conf)
 
-        # ── Sắp xếp góc đúng thứ tự [TL, TR, BR, BL] ──────────────────────
-        corners = order_corners(xy)
+        # ── Giữ đúng thứ tự keypoint [TL, TR, BR, BL] theo mô hình đã học ──────
+        corners = xy.astype(np.float32)
 
         # ── Sub-pixel refinement ────────────────────────────────────────────
         if self.use_subpixel:
