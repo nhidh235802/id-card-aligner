@@ -2,20 +2,25 @@
 main.py – Giao diện dòng lệnh (CLI) chính cho ID Card Aligner
 
 Cách dùng đơn giản nhất:
-  # 1. Chạy Benchmark số liệu (tự động điền weights tốt nhất)
+  # 1. Sinh bộ dữ liệu mới (data_new/ với tỉ lệ 60 train / 20 val / 20 test per category)
+  python main.py build_data
+
+  # 2. Huấn luyện mô hình YOLO (tự động dùng data_new/yolo_obb & yolo_pose)
+  python main.py train obb --epochs 50
+  python main.py train pose --epochs 50
+
+  # 3. Chạy Benchmark số liệu (tự động điền weights tốt nhất)
   python main.py benchmark real      # Chạy trên 30 ảnh thực tế
   python main.py benchmark front     # Chạy trên 120 ảnh synthetic mặt trước
   python main.py benchmark back      # Chạy trên 120 ảnh synthetic mặt sau
 
-  # 2. Debug vẽ 4 góc trên 1 ảnh cụ thể
-  python main.py debug data/real_test/13-7-2_1.jpg
+  # 4. Align 1 ảnh hoặc cả folder
+  python main.py align --img data_new/real_test/13-7-2_1.jpg --save
+  python main.py align --folder data_new/real_test --save
 
-  # 3. Kiểm tra nhãn Ground Truth
-  python main.py verify --data data/real_test --num 5
-
-  # 4. Huấn luyện mô hình (GPU/CPU)
-  python main.py train obb --epochs 50
-  python main.py train pose --epochs 50
+  # 5. Debug / Verify
+  python main.py debug data_new/real_test/13-7-2_1.jpg
+  python main.py verify --data data_new/real_test --num 5
 """
 
 import sys
@@ -28,19 +33,42 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Luôn dùng python trong .venv (có đủ thư viện cv2, ultralytics,...)
+# Luôn dùng python trong .venv
 _VENV_PYTHON = PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else sys.executable
 
-# Đường dẫn mặc định chuẩn
-DEFAULT_OBB_WEIGHTS = "runs/obb/runs/train/obb_finetune/weights/best.pt"
-DEFAULT_POSE_WEIGHTS = "runs/pose/runs/train/pose_finetune/weights/best.pt"
+# Tự động ưu tiên data_new và runs_new nếu tồn tại
+HAS_DATA_NEW = (PROJECT_ROOT / "data_new").exists()
+HAS_RUNS_NEW = (PROJECT_ROOT / "runs_new").exists()
+
+DATA_PREFIX = "data_new" if HAS_DATA_NEW else "data"
+RUNS_PREFIX = "runs_new" if HAS_RUNS_NEW else "runs"
+
+def resolve_weight_path(task: str) -> str:
+    if HAS_RUNS_NEW:
+        p = PROJECT_ROOT / "runs_new" / f"{task}_finetune" / "weights" / "best.pt"
+        if p.exists():
+            return str(p)
+    # Fallback legacy runs
+    p_legacy = PROJECT_ROOT / "runs" / task / "runs" / "train" / f"{task}_finetune" / "weights" / "best.pt"
+    if p_legacy.exists():
+        return str(p_legacy)
+    return f"{RUNS_PREFIX}/{task}_finetune/weights/best.pt"
+
+DEFAULT_OBB_WEIGHTS = resolve_weight_path("obb")
+DEFAULT_POSE_WEIGHTS = resolve_weight_path("pose")
 
 TESTSET_MAP = {
-    "real": "data/real_test",
-    "front": "data/synthetic_testset_front",
-    "back": "data/synthetic_testset_back",
+    "real": f"{DATA_PREFIX}/real_test",
+    "front": f"{DATA_PREFIX}/synthetic_testset_front",
+    "back": f"{DATA_PREFIX}/synthetic_testset_back",
 }
+
+
+def handle_build_data(args):
+    cmd = [PYTHON, "scripts/build_data_new.py"]
+    print("\n🚀 Đang khởi chạy quy trình tạo bộ dữ liệu mới data_new/...\n")
+    subprocess.run(cmd)
 
 
 def handle_benchmark(args):
@@ -126,6 +154,10 @@ def main():
 
     subparsers = parser.add_subparsers(dest="command", help="Danh sách lệnh")
 
+    # ── Lệnh build_data ───────────────────────────────────────────────────────
+    p_build = subparsers.add_parser("build_data", help="Tạo bộ dữ liệu data_new (60/20/20 train/val/test)")
+    p_build.set_defaults(func=handle_build_data)
+
     # ── Lệnh benchmark ────────────────────────────────────────────────────────
     p_bench = subparsers.add_parser("benchmark", help="Chạy đánh giá số liệu benchmark")
     p_bench.add_argument("target", choices=["real", "front", "back"], default="real", nargs="?",
@@ -144,7 +176,7 @@ def main():
 
     # ── Lệnh verify GT ────────────────────────────────────────────────────────
     p_verify = subparsers.add_parser("verify", help="Vẽ kiểm tra nhãn Ground Truth 4 góc")
-    p_verify.add_argument("--data", default="data/real_test", help="Thư mục testset chứa gt_annotations.json")
+    p_verify.add_argument("--data", default=f"{DATA_PREFIX}/real_test", help="Thư mục testset chứa gt_annotations.json")
     p_verify.add_argument("--num", type=int, default=5, help="Số ảnh muốn vẽ kiểm tra")
     p_verify.set_defaults(func=handle_verify)
 

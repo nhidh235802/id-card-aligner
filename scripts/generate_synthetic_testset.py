@@ -68,15 +68,7 @@ def apply_perspective(image, corners, distortion_level=0.2):
 
 def add_finger_occlusion(image, corners, num_corners=1):
     """
-    Giả lập ngón tay che góc thẻ.
-
-    Cải thiện so với hình tròn đơn thuần:
-    - Vẽ hình chữ nhật xéo hướng ra ngoài góc thẻ để che luôn 1 phần cạnh viền,
-      mô phỏng ngón tay thực tế cầm thẻ gần sát góc.
-
-    Known limitation (ghi chú báo cáo):
-    - Mẫu ngón tay vẫn là hình học đơn giản, chưa mô phỏng kết cấu da thật.
-    - Đủ dùng cho mục đích so sánh định tính/định lượng trong báo cáo.
+    Giả lập ngón tay che TRỰC TIẾP vào bên trong góc thẻ (phủ góc 35–75px).
     """
     vis = image.copy()
     h, w = image.shape[:2]
@@ -85,35 +77,67 @@ def add_finger_occlusion(image, corners, num_corners=1):
 
     for idx in indices:
         pt = corners[idx].astype(np.float32)
-        # Hướng từ tâm canvas ra góc (để hình chữ nhật che từ ngoài vào)
-        direction = pt - canvas_center
-        norm = np.linalg.norm(direction)
-        unit_dir = direction / norm if norm > 0 else np.array([1.0, 0.0])
+        # Vector từ góc HƯỚNG VÀO TRONG tâm canvas
+        inward_dir = canvas_center - pt
+        norm = np.linalg.norm(inward_dir)
+        unit_inward = inward_dir / norm if norm > 0 else np.array([-1.0, 0.0])
 
-        finger_len = int(min(h, w) * random.uniform(0.18, 0.28))
-        finger_width = int(min(h, w) * random.uniform(0.07, 0.12))
-        # Màu da ngón tay (Skintone)
+        finger_width = int(min(h, w) * random.uniform(0.06, 0.11))
+        overlap = random.uniform(35, 75)   # Độ phủ ngón tay đi sâu vào trong góc thẻ
+        finger_len = int(min(h, w) * random.uniform(0.20, 0.35))
+
+        base_start = pt - unit_inward * (finger_len - overlap)
+        tip = pt + unit_inward * overlap
+
+        perp = np.array([-unit_inward[1], unit_inward[0]])
         color = (
-            random.randint(110, 200),
-            random.randint(120, 195),
-            random.randint(130, 210),
+            random.randint(120, 190),
+            random.randint(140, 210),
+            random.randint(170, 235),
         )
 
-        # Tính 4 góc hình chữ nhật ngón tay
-        perp = np.array([-unit_dir[1], unit_dir[0]])
-        tip = pt + unit_dir * finger_len
         rect_pts = np.array([
-            pt    + perp * finger_width,
-            pt    - perp * finger_width,
-            tip   - perp * finger_width,
-            tip   + perp * finger_width,
+            base_start + perp * finger_width,
+            base_start - perp * finger_width,
+            tip        - perp * finger_width,
+            tip        + perp * finger_width,
         ], dtype=np.int32)
 
         cv2.fillPoly(vis, [rect_pts], color)
-        # Thêm 1 hình tròn ở đầu ngón để tự nhiên hơn
         cv2.circle(vis, (int(tip[0]), int(tip[1])), finger_width, color, -1)
 
     return vis
+
+
+def create_realistic_background(canvas_size=900):
+    """Sinh nền thực tế: vân gỗ, mặt bàn xước, gradient ánh sáng."""
+    bg_type = random.choice(["wood", "desk", "gray_table", "textured_light"])
+
+    if bg_type == "wood":
+        base_c = np.array([random.randint(40, 90), random.randint(70, 130), random.randint(120, 180)], dtype=np.float32)
+        bg = np.zeros((canvas_size, canvas_size, 3), dtype=np.uint8) + base_c
+        noise = np.random.randint(-25, 25, (canvas_size, 1, 3), dtype=np.int16)
+        bg = np.clip(bg.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+        bg = cv2.GaussianBlur(bg, (5, 35), 0)
+
+    elif bg_type == "desk":
+        val = random.randint(180, 230)
+        bg = np.full((canvas_size, canvas_size, 3), val, dtype=np.uint8)
+        noise = np.random.normal(0, 12, (canvas_size, canvas_size, 3)).astype(np.int16)
+        bg = np.clip(bg.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+    else:
+        val_start = random.randint(180, 230)
+        val_end = random.randint(140, 190)
+        X, Y = np.meshgrid(np.linspace(0, 1, canvas_size), np.linspace(0, 1, canvas_size))
+        grad = (val_start * (1 - X) + val_end * X).astype(np.uint8)
+        bg = cv2.merge([grad, grad, grad])
+
+    Y, X = np.ogrid[:canvas_size, :canvas_size]
+    dist_from_center = np.sqrt((X - canvas_size/2)**2 + (Y - canvas_size/2)**2)
+    max_dist = np.sqrt(2) * (canvas_size/2)
+    vig = 1.0 - 0.25 * (dist_from_center / max_dist)
+    return (bg.astype(np.float32) * vig[:, :, np.newaxis]).astype(np.uint8)
 
 
 def add_glare_flash(image):
@@ -122,7 +146,7 @@ def add_glare_flash(image):
     overlay = image.copy()
     center = (random.randint(0, w), random.randint(0, h))
     radius = random.randint(min(h, w) // 4, min(h, w) // 2)
-    
+
     cv2.circle(overlay, center, radius, (255, 255, 255), -1)
     alpha = random.uniform(0.3, 0.6)
     return cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
@@ -142,7 +166,7 @@ def generate_comprehensive_dataset(card_path: str, output_base: str, samples_per
         "5_low_contrast",
         "6_lighting_blur"
     ]
-    
+
     for cat in categories:
         (out_base / cat).mkdir(parents=True, exist_ok=True)
 
@@ -153,12 +177,11 @@ def generate_comprehensive_dataset(card_path: str, output_base: str, samples_per
 
     for cat in categories:
         print(f"Đang sinh {samples_per_category} ảnh cho nhóm: {cat}...")
-        
+
         for i in range(1, samples_per_category + 1):
             canvas_size = 900
-            # Nền mặc định
-            bg_color = random.randint(210, 240)
-            bg = np.full((canvas_size, canvas_size, 3), bg_color, dtype=np.uint8)
+            # Nền phong phú thực tế hơn
+            bg = create_realistic_background(canvas_size)
             
             curr_card = card_img.copy()
             curr_corners = base_corners.copy()
