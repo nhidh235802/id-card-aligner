@@ -98,15 +98,18 @@ def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Fine-tune YOLO-OBB và YOLO-Pose cho thẻ CCCD")
+    obb_default = "data_new/yolo_obb/dataset.yaml" if Path("data_new/yolo_obb/dataset.yaml").exists() else "data/yolo_obb/dataset.yaml"
+    pose_default = "data_new/yolo_pose/dataset.yaml" if Path("data_new/yolo_pose/dataset.yaml").exists() else "data/yolo_pose/dataset.yaml"
+    proj_default = "runs_new" if Path("data_new").exists() else "runs/train"
+
     parser.add_argument("--task",      choices=["obb", "pose", "both"], default="both")
     parser.add_argument("--model",     choices=["nano", "small", "medium"], default="nano",
                         help="Kích thước model (nano=nhanh nhất, medium=chính xác nhất)")
     parser.add_argument("--epochs",    type=int, default=50)
     parser.add_argument("--imgsz",     type=int, default=640)
-    parser.add_argument("--obb_data",  default="data/yolo_obb/dataset.yaml")
-    parser.add_argument("--pose_data", default="data/yolo_pose/dataset.yaml")
-    parser.add_argument("--project",   default="runs/train",
+    parser.add_argument("--obb_data",  default=obb_default)
+    parser.add_argument("--pose_data", default=pose_default)
+    parser.add_argument("--project",   default=proj_default,
                         help="Thư mục lưu kết quả training (checkpoints, logs)")
     args = parser.parse_args()
 

@@ -52,9 +52,9 @@ def corners_to_bbox(corners: list, img_w: int, img_h: int):
 def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
     """
     YOLO-OBB format: class_id x1 y1 x2 y2 x3 y3 x4 y4
-    Chuẩn hóa thứ tự [TL, TR, BR, BL] theo vị trí hình học trên canvas.
+    Giữ nguyên thứ tự [TL, TR, BR, BL] nội tại của thẻ.
     """
-    pts = order_corners(np.array(corners, dtype=np.float32))  # [TL, TR, BR, BL]
+    pts = np.array(corners, dtype=np.float32)  # [TL, TR, BR, BL]
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     coords = " ".join(f"{x:.6f} {y:.6f}" for x, y in normalized)
     return f"0 {coords}"
@@ -63,14 +63,13 @@ def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
 def corners_to_pose_label(corners: list, img_w: int, img_h: int) -> str:
     """
     YOLO-Pose format: class_id cx cy w h  x1 y1 v1  x2 y2 v2  x3 y3 v3  x4 y4 v4
-    Keypoint order: [TL, TR, BR, BL] theo vị trí hình học trên canvas.
+    Keypoint order: [TL, TR, BR, BL] chuẩn theo khung thẻ.
 
-    QUAN TRỌNG: Gọi order_corners() để chuẩn hóa thứ tự trước khi ghi label.
-    Nếu không, khi thẻ xoay 90°/180°/270°, keypoint 0 sẽ không còn ở
-    góc trên-trái → model nhận tín hiệu học mâu thuẫn nhau.
+    QUAN TRỌNG: Không dùng order_corners() làm biến đổi thứ tự theo canvas.
+    Giữ nguyên Keypoint 0=TL, Keypoint 1=TR, Keypoint 2=BR, Keypoint 3=BL của chiếc thẻ
+    để mô hình YOLO-Pose học đúng ngữ nghĩa không gian của góc thẻ ở mọi hướng xoay.
     """
-    # Chuẩn hóa thứ tự: TL=min(x+y), TR=min(y-x), BR=max(x+y), BL=max(y-x)
-    pts = order_corners(np.array(corners, dtype=np.float32))  # (4,2) [TL,TR,BR,BL]
+    pts = np.array(corners, dtype=np.float32)  # (4,2) [TL,TR,BR,BL]
     cx, cy, bw, bh = corners_to_bbox(pts.tolist(), img_w, img_h)
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     kpt_str = "  ".join(f"{x:.6f} {y:.6f} 2" for x, y in normalized)
