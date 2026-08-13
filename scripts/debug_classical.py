@@ -1,41 +1,39 @@
-"""
-debug_classical.py – Xem trực tiếp Canny + contours trên 1 ảnh test
-để hiểu tại sao ClassicalDetector không detect được thẻ.
-
-Cách dùng:
-    python scripts/debug_classical.py --img data/synthetic_testset_front/1_easy_standard/1_easy_standard_001.jpg
-"""
-
 import cv2
 import numpy as np
 import argparse
 import sys
 from pathlib import Path
 
+# Đảm bảo PYTHONPATH trỏ đúng vào thư mục gốc của dự án
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.detector.classical_detector import ClassicalDetector
 
+# Đọc các đối số truyền vào từ dòng lệnh
 parser = argparse.ArgumentParser()
 parser.add_argument("--img", required=True)
 parser.add_argument("--canny_low",  type=int, default=50)
 parser.add_argument("--canny_high", type=int, default=150)
 args = parser.parse_args()
 
+# Đọc ảnh gốc và lấy kích thước khung hình
 image = cv2.imread(args.img)
 h, w = image.shape[:2]
-min_area = h * w * 0.10  # 10%
+min_area = h * w * 0.10  # Ngưỡng diện tích tối thiểu (10% diện tích ảnh)
 
+# ── Khối tiền xử lý ảnh: Chuyển ảnh xám, làm mờ Gaussian và tách biên Canny ──
 gray    = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 edges   = cv2.Canny(blurred, args.canny_low, args.canny_high)
 kernel  = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
 edges   = cv2.dilate(edges, kernel, iterations=1)
 
+# ── Khối trích xuất contours từ bản đồ cạnh ──
 contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
 print(f"Tổng contours tìm được: {len(contours)}")
 print(f"Image size: {w}x{h}, min_area ngưỡng: {min_area:.0f} px²")
 
+# ── Khối lọc các đường contour thành hình đa giác 4 cạnh (quadrilateral) ──
 vis = image.copy()
 quads = []
 for cnt in contours:
@@ -53,13 +51,14 @@ for cnt in contours:
     else:
         cv2.drawContours(vis, [approx], -1, (200, 200, 0), 1)
 
+# ── Khối đánh giá ứng viên contour lớn nhất và tính độ tin cậy confidence ──
 if quads:
     best = max(quads, key=lambda x: x[0])
     print(f"\n→ Best quad area = {best[0]:.0f} → confidence = {min(best[0]/(h*w), 1.0):.3f}")
 else:
     print("\n→ Không tìm thấy contour 4 cạnh nào phù hợp!")
 
-# Resize cho vừa màn hình
+# ── Khối thu nhỏ kích thước hiển thị và xuất ra màn hình OpenCV Window ──
 scale = min(800/w, 700/h)
 vis_r  = cv2.resize(vis,   (int(w*scale), int(h*scale)))
 edges_r = cv2.resize(edges, (int(w*scale), int(h*scale)))

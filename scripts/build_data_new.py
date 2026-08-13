@@ -1,22 +1,3 @@
-"""
-build_data_new.py – Tự động tạo bộ dữ liệu mới tại thư mục `data_new/`
-
-Cấu trúc tạo ra:
-  data_new/
-  ├── train_front/             (360 ảnh = 60 ảnh × 6 categories)
-  ├── val_front/               (120 ảnh = 20 ảnh × 6 categories)
-  ├── synthetic_testset_front/ (120 ảnh = 20 ảnh × 6 categories)
-  ├── train_back/              (360 ảnh = 60 ảnh × 6 categories)
-  ├── val_back/                (120 ảnh = 20 ảnh × 6 categories)
-  ├── synthetic_testset_back/  (120 ảnh = 20 ảnh × 6 categories)
-  ├── real_test/               (30 ảnh thực tế copy từ data/real_test)
-  ├── yolo_obb/                (Dataset YOLO-OBB train: 720, val: 240)
-  └── yolo_pose/               (Dataset YOLO-Pose train: 720, val: 240)
-
-Cách dùng:
-  python scripts/build_data_new.py
-"""
-
 import os
 import sys
 import shutil
@@ -25,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import cv2
 
+# Thêm thư mục gốc vào sys.path để import các module nội bộ
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -34,25 +16,43 @@ from scripts.convert_gt_to_yolo import corners_to_obb_label, corners_to_pose_lab
 
 
 def copy_real_test(src_real: Path, dst_real: Path):
-    """Copy 30 ảnh real test và gt_annotations.json sang data_new/real_test/"""
+    """Sao chép bộ ảnh kiểm thử thực tế và file nhãn gt_annotations.json sang data_new/real_test/."""
     dst_real.mkdir(parents=True, exist_ok=True)
 
+    # Kiểm tra sự tồn tại của thư mục nguồn
     if not src_real.exists():
         print(f"⚠️  Thư mục nguồn '{src_real}' không tồn tại!")
         return
 
-    count = 0
-    for item in src_real.iterdir():
-        if item.is_file():
-            shutil.copy2(item, dst_real / item.name)
-            if item.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-                count += 1
+    # Kiểm tra sự tồn tại của file nhãn Ground Truth
+    gt_json = src_real / "gt_annotations.json"
+    if not gt_json.exists():
+        print(f"⚠️  Không tìm thấy '{gt_json}'!")
+        return
 
-    print(f"✅ Đã copy {count} ảnh real test + gt_annotations.json sang '{dst_real}'")
+    # Đọc dữ liệu nhãn Ground Truth JSON
+    with open(gt_json, encoding="utf-8") as f:
+        gt_data = json.load(f)
+
+    # Sao chép file gt_annotations.json sang thư mục đích
+    shutil.copy2(gt_json, dst_real / "gt_annotations.json")
+
+    # Duyệt và sao chép từng file ảnh được liệt kê trong file nhãn
+    count = 0
+    for rel_key in gt_data.keys():
+        src_img = src_real / rel_key
+        if src_img.exists():
+            shutil.copy2(src_img, dst_real / rel_key)
+            count += 1
+        else:
+            print(f"  ⚠️  Không tìm thấy ảnh: {rel_key}")
+
+    print(f"✅ Đã copy chính xác {count} ảnh real test được gán nhãn + gt_annotations.json sang '{dst_real}'")
 
 
 def convert_dataset_to_yolo(train_dirs: list, val_dirs: list, obb_dir: Path, pose_dir: Path):
-    """Convert train_dirs và val_dirs thành YOLO-OBB và YOLO-Pose datasets."""
+    """Chuyển đổi dữ liệu tổng hợp trong train_dirs và val_dirs sang định dạng YOLO-OBB và YOLO-Pose."""
+    # Tạo cấu trúc thư mục chuẩn cho YOLO (images/train, images/val, labels/train, labels/val)
     for model_dir in [obb_dir, pose_dir]:
         (model_dir / "images" / "train").mkdir(parents=True, exist_ok=True)
         (model_dir / "images" / "val").mkdir(parents=True, exist_ok=True)
@@ -61,6 +61,7 @@ def convert_dataset_to_yolo(train_dirs: list, val_dirs: list, obb_dir: Path, pos
 
     splits = [("train", train_dirs), ("val", val_dirs)]
 
+    # Duyệt qua các tập split (train, val) để chuyển đổi dữ liệu
     for split_name, src_dirs in splits:
         total_count = 0
         for src_path in src_dirs:
@@ -77,6 +78,7 @@ def convert_dataset_to_yolo(train_dirs: list, val_dirs: list, obb_dir: Path, pos
                 if not img_src.exists():
                     continue
 
+                # Đọc ảnh để lấy kích thước chiều rộng và chiều cao
                 img = cv2.imread(str(img_src))
                 if img is None:
                     continue
@@ -86,15 +88,16 @@ def convert_dataset_to_yolo(train_dirs: list, val_dirs: list, obb_dir: Path, pos
                 new_img_name = f"{prefix}__{clean_name}"
                 txt_name = Path(new_img_name).stem + ".txt"
 
-                # Copy image
+                # Sao chép file ảnh sang thư mục hình ảnh của YOLO
                 shutil.copy2(img_src, obb_dir / "images" / split_name / new_img_name)
                 shutil.copy2(img_src, pose_dir / "images" / split_name / new_img_name)
 
-                # Labels
+                # Chuyển đổi tọa độ 4 góc sang định dạng label OBB và Pose
                 corners = entry["corners"]
                 obb_txt = corners_to_obb_label(corners, img_w, img_h)
                 pose_txt = corners_to_pose_label(corners, img_w, img_h)
 
+                # Ghi file nhãn .txt cho YOLO-OBB và YOLO-Pose
                 with open(obb_dir / "labels" / split_name / txt_name, "w", encoding="utf-8") as f:
                     f.write(obb_txt + "\n")
 
@@ -105,7 +108,7 @@ def convert_dataset_to_yolo(train_dirs: list, val_dirs: list, obb_dir: Path, pos
 
         print(f"  ✓ {split_name.upper()} split: {total_count} ảnh")
 
-    # Tạo dataset.yaml cho OBB
+    # Ghi file cấu hình dataset.yaml cho YOLO-OBB
     obb_yaml = f"""path: {obb_dir.resolve().as_posix()}
 train: images/train
 val: images/val
@@ -116,7 +119,7 @@ names:
     with open(obb_dir / "dataset.yaml", "w", encoding="utf-8") as f:
         f.write(obb_yaml)
 
-    # Tạo dataset.yaml cho Pose
+    # Ghi file cấu hình dataset.yaml cho YOLO-Pose
     pose_yaml = f"""path: {pose_dir.resolve().as_posix()}
 train: images/train
 val: images/val
@@ -135,10 +138,12 @@ names:
 
 
 def main():
+    """Hàm điều khiển quy trình khởi tạo bộ dữ liệu data_new hoàn chỉnh."""
     data_new = PROJECT_ROOT / "data_new"
     card_front = PROJECT_ROOT / "assets" / "samples" / "clean_front.jpg"
     card_back  = PROJECT_ROOT / "assets" / "samples" / "clean_back.jpg"
 
+    # Đảm bảo mẫu ảnh thẻ mặt trước và mặt sau tồn tại
     if not card_front.exists() or not card_back.exists():
         print("❌ Không tìm thấy clean_front.jpg hoặc clean_back.jpg trong assets/samples/")
         return
@@ -147,23 +152,23 @@ def main():
     print("🚀 Bắt đầu sinh bộ dữ liệu mới tại data_new/")
     print("=======================================================\n")
 
-    # 1. Sinh data cho Front (60 train, 20 val, 20 test per category)
+    # Bước 1: Sinh bộ dữ liệu tổng hợp mặt trước (train, val, test)
     print("📷 [1/4] Sinh Synthetic Front...")
     generate_comprehensive_dataset(str(card_front), str(data_new / "train_front"), samples_per_category=60)
     generate_comprehensive_dataset(str(card_front), str(data_new / "val_front"), samples_per_category=20)
     generate_comprehensive_dataset(str(card_front), str(data_new / "synthetic_testset_front"), samples_per_category=20)
 
-    # 2. Sinh data cho Back (60 train, 20 val, 20 test per category)
+    # Bước 2: Sinh bộ dữ liệu tổng hợp mặt sau (train, val, test)
     print("\n📷 [2/4] Sinh Synthetic Back...")
     generate_comprehensive_dataset(str(card_back), str(data_new / "train_back"), samples_per_category=60)
     generate_comprehensive_dataset(str(card_back), str(data_new / "val_back"), samples_per_category=20)
     generate_comprehensive_dataset(str(card_back), str(data_new / "synthetic_testset_back"), samples_per_category=20)
 
-    # 3. Copy Real Test
+    # Bước 3: Sao chép tập ảnh thực tế làm testset
     print("\n📁 [3/4] Copy Real Test...")
     copy_real_test(PROJECT_ROOT / "data" / "real_test", data_new / "real_test")
 
-    # 4. Convert YOLO
+    # Bước 4: Chuyển đổi nhãn sang định dạng huấn luyện YOLO-OBB và YOLO-Pose
     print("\n🔄 [4/4] Convert nhãn sang YOLO-OBB & YOLO-Pose...")
     train_dirs = [data_new / "train_front", data_new / "train_back"]
     val_dirs   = [data_new / "val_front",   data_new / "val_back"]

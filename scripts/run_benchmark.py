@@ -1,27 +1,3 @@
-"""
-run_benchmark.py – Lấy số liệu so sánh 3 phương pháp cho báo cáo.
-
-Output khớp chính xác với bảng báo cáo:
-  - Corner Distance Error (px, trung bình)
-  - % ảnh detect thành công
-  - Thời gian xử lý / ảnh (ms)
-  - Breakdown theo từng category
-
-Cách dùng:
-  # Baseline (chưa fine-tune) với Classical CV:
-  python scripts/run_benchmark.py --testset data/synthetic_testset_front --methods classical
-
-  # So sánh đầy đủ sau khi fine-tune:
-  python scripts/run_benchmark.py ^
-    --testset data/synthetic_testset_front ^
-    --methods classical obb pose ^
-    --obb_weights runs/train/obb_finetune/weights/best.pt ^
-    --pose_weights runs/train/pose_finetune/weights/best.pt
-
-  # Test trên real_test set:
-  python scripts/run_benchmark.py --testset data/real_test --methods classical obb pose ...
-"""
-
 import argparse
 import json
 import sys
@@ -32,20 +8,21 @@ import numpy as np
 from pathlib import Path
 from collections import defaultdict
 
-# Tự động thêm thư mục root vào PYTHONPATH để import module 'src' không bị lỗi
+# Thêm thư mục gốc vào sys.path để import module 'src' không bị lỗi
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 
-# ── Metrics ────────────────────────────────────────────────────────────────────
+# ── Hàm tính toán các chỉ số đánh giá (Metrics) ─────────────────────────────────
 
 def corner_distance_error(pred: np.ndarray, gt: np.ndarray) -> float:
-    """Mean Euclidean distance giữa 4 góc predict và GT (pixel)."""
+    """Khoảng cách Euclidean trung bình giữa 4 góc dự đoán và Ground Truth (tính bằng pixel)."""
     return float(np.linalg.norm(pred - gt, axis=1).mean())
 
 
 def polygon_iou(pred: np.ndarray, gt: np.ndarray) -> float:
+    """Chỉ số IoU (Intersection over Union) giữa 2 đa giác 4 góc thẻ."""
     pred_i = pred.astype(np.float32).reshape(-1, 1, 2)
     gt_i   = gt.astype(np.float32).reshape(-1, 1, 2)
     inter, _  = cv2.intersectConvexConvex(pred_i, gt_i)
@@ -55,9 +32,10 @@ def polygon_iou(pred: np.ndarray, gt: np.ndarray) -> float:
     return float(inter / union) if union > 0 else 0.0
 
 
-# ── Detectors ──────────────────────────────────────────────────────────────────
+# ── Bộ nạp các mô hình Detector ─────────────────────────────────────────────────
 
 def load_classical(config_path="configs/classical_detector.yaml"):
+    """Nạp bộ phát hiện OpenCV Classical Contour."""
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     from src.detector.classical_detector import ClassicalDetector
@@ -65,6 +43,7 @@ def load_classical(config_path="configs/classical_detector.yaml"):
 
 
 def load_obb(weights: str, config_path="configs/obb_detector.yaml"):
+    """Nạp mô hình phát hiện YOLO-OBB."""
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     cfg["weights"] = weights
@@ -73,6 +52,7 @@ def load_obb(weights: str, config_path="configs/obb_detector.yaml"):
 
 
 def load_pose(weights: str, config_path="configs/pose_detector.yaml"):
+    """Nạp mô hình phát hiện YOLO-Pose."""
     with open(config_path, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     cfg["weights"] = weights
@@ -80,13 +60,10 @@ def load_pose(weights: str, config_path="configs/pose_detector.yaml"):
     return PoseDetector(cfg).load_model()
 
 
-# ── Benchmark runner ───────────────────────────────────────────────────────────
+# ── Khối thực thi Benchmark trên tập kiểm thử ───────────────────────────────────
 
 def run_on_testset(detector, testset_dir: Path, gt_data: dict, conf_threshold: float = 0.3):
-    """
-    Chạy detector trên toàn bộ testset.
-    Returns: dict keyed by category → list of per-image result dicts.
-    """
+    """Chạy detector trên toàn bộ tập ảnh testset và đo thời gian xử lý cũng như độ chính xác."""
     category_results = defaultdict(list)
 
     for rel_key, entry in gt_data.items():
@@ -101,6 +78,7 @@ def run_on_testset(detector, testset_dir: Path, gt_data: dict, conf_threshold: f
         gt_corners = np.array(entry["corners"], dtype=np.float32)
         category   = entry.get("category", "unknown")
 
+        # Đo độ trễ (latency) của quá trình suy luận
         t0 = time.perf_counter()
         result = detector.detect(image)
         t1 = time.perf_counter()
@@ -113,6 +91,7 @@ def run_on_testset(detector, testset_dir: Path, gt_data: dict, conf_threshold: f
             "latency_ms": latency_ms,
         }
 
+        # Nếu phát hiện thành công → tính toán sai số khoảng cách và IoU
         if success:
             row["corner_err_px"] = corner_distance_error(result.corners, gt_corners)
             row["iou"]           = polygon_iou(result.corners, gt_corners)
@@ -126,10 +105,11 @@ def run_on_testset(detector, testset_dir: Path, gt_data: dict, conf_threshold: f
 
 
 def summarize(category_results: dict) -> dict:
-    """Tổng hợp metrics theo từng category và overall."""
+    """Tổng hợp kết quả thống kê metrics theo từng phân loại (category) và tổng thể (overall)."""
     summary = {}
     all_rows = []
 
+    # Thống kê chi tiết cho từng category
     for cat, rows in sorted(category_results.items()):
         all_rows.extend(rows)
         n_total   = len(rows)
@@ -144,7 +124,7 @@ def summarize(category_results: dict) -> dict:
             "latency_ms":      round(float(np.mean(latencies)), 1),
         }
 
-    # Overall
+    # Thống kê tổng hợp trên toàn bộ tập ảnh testset
     n_total   = len(all_rows)
     n_success = sum(1 for r in all_rows if r["success"])
     errs      = [r["corner_err_px"] for r in all_rows if r["corner_err_px"] is not None]
@@ -161,10 +141,10 @@ def summarize(category_results: dict) -> dict:
 
 
 def print_table(method_summaries: dict):
-    """In bảng so sánh khớp với format báo cáo."""
+    """In bảng so sánh kết quả benchmark theo định dạng chuẩn báo cáo."""
     methods = list(method_summaries.keys())
 
-    # ── Bảng tổng quan (6.2) ──────────────────────────────────────────────────
+    # ── Bảng tổng quan ──
     print(f"\n{'─'*72}")
     print(f"  Bảng 6.2 – So sánh định lượng tổng thể")
     print(f"{'─'*72}")
@@ -177,7 +157,7 @@ def print_table(method_summaries: dict):
         err_str = f"{ov['corner_err_px']:.2f}" if ov['corner_err_px'] is not None else "N/A"
         print(f"  {method:<22} {err_str:<18} {ov['detect_rate_pct']:<14} {ov['latency_ms']}")
 
-    # ── Bảng chi tiết theo category (6.3) ────────────────────────────────────
+    # ── Bảng chi tiết theo category ──
     cats = [c for c in list(list(method_summaries.values())[0].keys()) if c != "__overall__"]
 
     print(f"\n{'─'*90}")
@@ -203,9 +183,8 @@ def print_table(method_summaries: dict):
     print(f"{'─'*90}\n")
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
-
 if __name__ == "__main__":
+    # Khởi tạo parser đọc các tham số dòng lệnh
     parser = argparse.ArgumentParser(description="Benchmark 3 phương pháp detect thẻ CCCD")
     parser.add_argument("--testset",      required=True,
                         help="Thư mục testset (phải có gt_annotations.json)")
@@ -222,7 +201,7 @@ if __name__ == "__main__":
                         help="Lưu kết quả ra file JSON (tuỳ chọn)")
     args = parser.parse_args()
 
-    # Load GT
+    # Đọc thông tin Ground Truth
     testset_dir = Path(args.testset)
     gt_path     = testset_dir / "gt_annotations.json"
     if not gt_path.exists():
@@ -231,7 +210,7 @@ if __name__ == "__main__":
         gt_data = json.load(f)
     print(f"Testset: {testset_dir} ({len(gt_data)} ảnh)")
 
-    # Load detectors & run
+    # Khởi chạy đánh giá cho từng phương pháp được yêu cầu
     all_summaries = {}
 
     if "classical" in args.methods:
@@ -254,10 +233,10 @@ if __name__ == "__main__":
         label = "YOLO-Pose (pretrain)" if "yolo11n" in args.pose_weights else "YOLO-Pose (finetune)"
         all_summaries[label] = summarize(cat_results)
 
-    # Print tables
+    # Hiển thị bảng tổng hợp kết quả
     print_table(all_summaries)
 
-    # Lưu JSON nếu cần
+    # Ghi kết quả ra file JSON nếu chỉ định --save_json
     if args.save_json:
         import json as _json
         Path(args.save_json).parent.mkdir(parents=True, exist_ok=True)

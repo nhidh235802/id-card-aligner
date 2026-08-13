@@ -1,23 +1,16 @@
-"""
-prepare_clean_card.py – Chuẩn hóa 1 ảnh CCCD gốc về kích thước & tỷ lệ chuẩn ISO (856 x 540).
-
-Công dụng:
-- Đảm bảo 4 mép ảnh trùng khít với 4 góc thẻ.
-- Ép về tỷ lệ chuẩn Aspect Ratio = 85.6 / 54.0 ≈ 1.5852.
-- Chuẩn bị ảnh "sạch tuyệt đối" làm đầu vào cho script sinh synthetic testset.
-"""
-
 import cv2
 import numpy as np
 from pathlib import Path
 
-# Tiêu chuẩn ISO/IEC 7810 ID-1
+# Hằng số kích thước và tỷ lệ khung hình tiêu chuẩn ISO/IEC 7810 ID-1
 TARGET_WIDTH = 856
 TARGET_HEIGHT = 540
 STANDARD_ASPECT_RATIO = TARGET_WIDTH / TARGET_HEIGHT  # ≈ 1.585185
 
 
 def sanitize_and_resize_card(input_path: str, output_path: str):
+    """Chuẩn hóa một ảnh thẻ căn cước đầu vào về kích thước chuẩn ISO ID-1 (856x540 px)."""
+    # Đọc ảnh nguồn
     img = cv2.imread(input_path)
     if img is None:
         raise FileNotFoundError(f"Không thể đọc ảnh từ: {input_path}")
@@ -27,9 +20,10 @@ def sanitize_and_resize_card(input_path: str, output_path: str):
 
     print(f"Ảnh gốc: {w}x{h}px | Aspect Ratio hiện tại: {curr_ratio:.4f}")
 
-    # Resize trực tiếp về chuẩn 856x540 bằng Interpolation INTER_AREA (cho chất lượng nét nhất)
+    # Resize ảnh trực tiếp về kích thước chuẩn 856x540 dùng thuật toán Interpolation INTER_AREA
     clean_card = cv2.resize(img, (TARGET_WIDTH, TARGET_HEIGHT), interpolation=cv2.INTER_AREA)
 
+    # Đảm bảo thư mục lưu tồn tại và ghi file ảnh đã chuẩn hóa
     out_p = Path(output_path)
     out_p.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_p), clean_card)

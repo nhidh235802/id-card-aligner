@@ -1,14 +1,3 @@
-"""
-subpixel_utils.py – Làm mịn vị trí góc thẻ ở mức sub-pixel.
-
-Dùng OpenCV cornerSubPix để tăng độ chính xác tọa độ góc
-từ ~1px → ~0.1px, giúp perspective transform chính xác hơn.
-
-Quan trọng nhất khi:
-- Thẻ được chụp gần (độ phân giải cao)
-- OCR cần crop sát cạnh mà không mất pixel
-"""
-
 import cv2
 import numpy as np
 
@@ -20,21 +9,11 @@ def refine_corners_subpixel(
     max_iter: int = 30,
     epsilon: float = 0.01,
 ) -> np.ndarray:
-    """
-    Tinh chỉnh tọa độ 4 góc ở mức sub-pixel.
-
-    Args:
-        image    : BGR image gốc (H, W, 3)
-        corners  : (4, 2) float32 – góc từ detector
-        win_size : kích thước cửa sổ tìm kiếm (pixel)
-        max_iter : số vòng lặp tối đa
-        epsilon  : ngưỡng hội tụ
-
-    Returns:
-        refined_corners : (4, 2) float32
-    """
+    """Tinh chỉnh tọa độ 4 góc thẻ ở độ chính xác dưới mức pixel (sub-pixel) bằng thuật toán OpenCV cornerSubPix."""
+    # Chuyển ảnh BGR nguồn sang ảnh xám
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+    # ── Khối 1: Định nghĩa tiêu chí dừng hội tụ (vòng lặp tối đa hoặc ngưỡng sai số epsilon) ──
     criteria = (
         cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
         max_iter,
@@ -43,6 +22,7 @@ def refine_corners_subpixel(
 
     corners_cv = corners.reshape(-1, 1, 2).astype(np.float32)
 
+    # ── Khối 2: Thực thi thuật toán cornerSubPix tinh chỉnh tọa độ góc ──
     try:
         refined = cv2.cornerSubPix(
             gray,
@@ -53,5 +33,5 @@ def refine_corners_subpixel(
         )
         return refined.reshape(4, 2).astype(np.float32)
     except cv2.error:
-        # Nếu góc nằm ngoài ảnh → trả về nguyên bản
+        # Nếu có lỗi ngoại lệ hoặc góc nằm ngoài phạm vi ảnh -> trả về tọa độ ban đầu
         return corners

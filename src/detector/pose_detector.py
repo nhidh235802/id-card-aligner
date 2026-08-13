@@ -1,9 +1,3 @@
-"""
-PoseDetector – dùng YOLO-Pose (keypoint) để detect 4 góc thẻ CCCD.
-
-Keypoint order: [TL, TR, BR, BL]  (Top-Left, Top-Right, Bottom-Right, Bottom-Left)
-"""
-
 import numpy as np
 from ultralytics import YOLO
 
@@ -14,12 +8,7 @@ from src.utils.subpixel_utils import refine_corners_subpixel
 
 
 class PoseDetector(BaseDetector):
-    """
-    YOLO-Pose based card corner detector.
-
-    Args:
-        config (dict): xem configs/pose_detector.yaml
-    """
+    """Bộ phát hiện góc thẻ căn cước bằng mô hình điểm mốc YOLO-Pose (Keypoint Detection)."""
 
     def __init__(self, config: dict):
         super().__init__(config)
@@ -31,14 +20,17 @@ class PoseDetector(BaseDetector):
         self.use_subpixel = config.get("use_subpixel", True)
 
     def load_model(self):
+        """Khởi tạo mô hình YOLO-Pose từ file trọng số (weights)."""
         weights = self.config["weights"]
         self.model = YOLO(weights)
         return self
 
     def detect(self, image: np.ndarray) -> DetectionResult:
+        """Dự đoán 4 keypoints góc thẻ theo đúng thứ tự không gian ngữ nghĩa [TL, TR, BR, BL]."""
         if self.model is None:
             raise RuntimeError("Model chưa được load. Gọi load_model() trước.")
 
+        # ── Khối 1: Chạy mô hình YOLO-Pose để dự đoán vị trí keypoints ──
         results = self.model.predict(
             image,
             conf=self.conf_threshold,
@@ -54,7 +46,7 @@ class PoseDetector(BaseDetector):
                 is_occluded=True,
             )
 
-        kpts = results[0].keypoints  # Keypoints object
+        kpts = results[0].keypoints
         if kpts is None or len(kpts.xy) == 0:
             return DetectionResult(
                 corners=np.zeros((4, 2), dtype=np.float32),
@@ -62,12 +54,12 @@ class PoseDetector(BaseDetector):
                 is_occluded=True,
             )
 
+        # ── Khối 2: Trích xuất tọa độ pixel và độ tin cậy của từng keypoint góc ──
         xy = kpts.xy[0].cpu().numpy()          # Shape (N, 2)
         conf_per_kpt = kpts.conf[0].cpu().numpy() if kpts.conf is not None else None
         box_conf = float(results[0].boxes.conf[0].cpu()) if len(results[0].boxes) > 0 else 0.0
 
-        # An toàn: Nếu số lượng keypoint khác 4 (do xài pretrained COCO 17 keypoints)
-        # thì coi như chưa detect được thẻ CCCD
+        # Kiểm tra điều kiện số lượng keypoints đủ 4 góc thẻ
         if len(xy) != 4:
             return DetectionResult(
                 corners=np.zeros((4, 2), dtype=np.float32),
@@ -75,18 +67,19 @@ class PoseDetector(BaseDetector):
                 is_occluded=True,
             )
 
-        # ── Occlusion handling: góc nào conf thấp → ước tính lại ──────────
+        # ── Khối 3: Xử lý che khuất (Occlusion Handling) cho điểm góc có độ tin cậy thấp ──
         is_occluded = bool(np.any(conf_per_kpt < self.occlusion_min_conf))
         if is_occluded:
             xy = handle_missing_corners(xy, conf_per_kpt, self.occlusion_min_conf)
 
-        # ── Giữ đúng thứ tự keypoint [TL, TR, BR, BL] theo mô hình đã học ──────
+        # Giữ nguyên thứ tự không gian học được từ nhãn Pose [TL, TR, BR, BL]
         corners = xy.astype(np.float32)
 
-        # ── Sub-pixel refinement ────────────────────────────────────────────
+        # ── Khối 4: Tinh chỉnh vị trí góc mức dưới pixel (Sub-pixel Refinement) ──
         if self.use_subpixel:
             corners = refine_corners_subpixel(image, corners)
 
+        # Tính toán các giá trị hình học góc xoay và tỷ lệ
         angle = compute_angle(corners)
         aspect = compute_aspect_ratio(corners)
 

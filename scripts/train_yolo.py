@@ -1,26 +1,6 @@
-"""
-train_yolo.py – Fine-tune YOLO-OBB và YOLO-Pose trên dataset thẻ CCCD.
-
-Cách dùng:
-  # Fine-tune cả 2:
-  python scripts/train_yolo.py --task both
-
-  # Chỉ OBB:
-  python scripts/train_yolo.py --task obb
-
-  # Chỉ Pose:
-  python scripts/train_yolo.py --task pose
-
-  # Tuỳ chỉnh epochs và model size:
-  python scripts/train_yolo.py --task both --epochs 50 --model nano
-"""
-
 import argparse
 from pathlib import Path
 
-
-# ── Model presets ──────────────────────────────────────────────────────────────
-# Ultralytics tự download weights nếu chưa có
 MODEL_MAP = {
     "obb": {
         "nano":   "yolo11n-obb.pt",
@@ -36,25 +16,28 @@ MODEL_MAP = {
 
 
 def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int):
+    """Huấn luyện tinh chỉnh (fine-tune) mô hình YOLO-OBB cho nhiệm vụ phát hiện bounding box định hướng của thẻ."""
     from ultralytics import YOLO
 
+    # Nạp weights tương ứng từ preset
     weights = MODEL_MAP["obb"][model_size]
     print(f"\n{'='*55}")
     print(f"  Fine-tune YOLO-OBB | model={weights} | epochs={epochs}")
     print(f"{'='*55}")
 
+    # Khởi tạo mô hình và chạy huấn luyện với các siêu tham số
     model = YOLO(weights)
     results = model.train(
         data=data_yaml,
         epochs=epochs,
         imgsz=imgsz,
         batch=16,
-        patience=10,           # Early stopping nếu không cải thiện sau 10 epoch
+        patience=10,           # Dừng sớm (early stopping) nếu không cải thiện sau 10 epoch
         project=project,
         name="obb_finetune",
         exist_ok=True,
         verbose=True,
-        # Augmentation nhẹ — data synthetic đã đa dạng sẵn rồi
+        # Cấu hình augmentation nhẹ cho dữ liệu
         hsv_h=0.01,
         hsv_s=0.3,
         hsv_v=0.2,
@@ -68,13 +51,16 @@ def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz:
 
 
 def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int):
+    """Huấn luyện tinh chỉnh (fine-tune) mô hình YOLO-Pose cho nhiệm vụ phát hiện 4 keypoints góc thẻ."""
     from ultralytics import YOLO
 
+    # Nạp weights tương ứng từ preset
     weights = MODEL_MAP["pose"][model_size]
     print(f"\n{'='*55}")
     print(f"  Fine-tune YOLO-Pose | model={weights} | epochs={epochs}")
     print(f"{'='*55}")
 
+    # Khởi tạo mô hình và chạy huấn luyện với các siêu tham số
     model = YOLO(weights)
     results = model.train(
         data=data_yaml,
@@ -98,23 +84,29 @@ def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz
 
 
 if __name__ == "__main__":
-    obb_default = "data_new/yolo_obb/dataset.yaml" if Path("data_new/yolo_obb/dataset.yaml").exists() else "data/yolo_obb/dataset.yaml"
+    # Tự động chọn đường dẫn mặc định cho bộ dữ liệu cũ hoặc bộ dữ liệu data_new mới
+    obb_default  = "data_new/yolo_obb/dataset.yaml" if Path("data_new/yolo_obb/dataset.yaml").exists() else "data/yolo_obb/dataset.yaml"
     pose_default = "data_new/yolo_pose/dataset.yaml" if Path("data_new/yolo_pose/dataset.yaml").exists() else "data/yolo_pose/dataset.yaml"
-    proj_default = "runs_new" if Path("data_new").exists() else "runs/train"
+    
+    obb_proj_default  = "runs/obb/runs_new" if Path("data_new").exists() else "runs/obb/runs/train"
+    pose_proj_default = "runs/pose/runs_new" if Path("data_new").exists() else "runs/pose/runs/train"
 
-    parser.add_argument("--task",      choices=["obb", "pose", "both"], default="both")
-    parser.add_argument("--model",     choices=["nano", "small", "medium"], default="nano",
+    # Đọc tham số từ dòng lệnh
+    parser = argparse.ArgumentParser(description="Fine-tune YOLO-OBB và YOLO-Pose cho thẻ CCCD")
+    parser.add_argument("--task",        choices=["obb", "pose", "both"], default="both")
+    parser.add_argument("--model",       choices=["nano", "small", "medium"], default="nano",
                         help="Kích thước model (nano=nhanh nhất, medium=chính xác nhất)")
-    parser.add_argument("--epochs",    type=int, default=50)
-    parser.add_argument("--imgsz",     type=int, default=640)
-    parser.add_argument("--obb_data",  default=obb_default)
-    parser.add_argument("--pose_data", default=pose_default)
-    parser.add_argument("--project",   default=proj_default,
-                        help="Thư mục lưu kết quả training (checkpoints, logs)")
+    parser.add_argument("--epochs",      type=int, default=50)
+    parser.add_argument("--imgsz",       type=int, default=640)
+    parser.add_argument("--obb_data",    default=obb_default)
+    parser.add_argument("--pose_data",   default=pose_default)
+    parser.add_argument("--obb_project",  default=obb_proj_default)
+    parser.add_argument("--pose_project", default=pose_proj_default)
     args = parser.parse_args()
 
+    # Điều hướng thực thi huấn luyện mô hình được lựa chọn
     if args.task in ("obb", "both"):
-        train_obb(args.epochs, args.model, args.obb_data, args.project, args.imgsz)
+        train_obb(args.epochs, args.model, args.obb_data, args.obb_project, args.imgsz)
 
     if args.task in ("pose", "both"):
-        train_pose(args.epochs, args.model, args.pose_data, args.project, args.imgsz)
+        train_pose(args.epochs, args.model, args.pose_data, args.pose_project, args.imgsz)

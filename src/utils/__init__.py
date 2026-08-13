@@ -1,6 +1,3 @@
-"""
-utils package
-"""
 from .corner_utils import order_corners, compute_angle, compute_aspect_ratio, obb_to_corners
 from .occlusion_utils import handle_missing_corners
 from .subpixel_utils import refine_corners_subpixel

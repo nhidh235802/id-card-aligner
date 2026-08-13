@@ -1,26 +1,3 @@
-"""
-convert_gt_to_yolo.py – Chuyển gt_annotations.json → YOLO label (.txt)
-
-Tạo ra 2 bộ label song song:
-  data/yolo_obb/   – dùng để train/eval YOLO-OBB
-  data/yolo_pose/  – dùng để train/eval YOLO-Pose
-
-Cấu trúc output:
-  data/yolo_obb/
-  ├── images/train/   images/val/
-  ├── labels/train/   labels/val/
-  └── dataset.yaml
-
-  data/yolo_pose/
-  ├── images/train/   images/val/
-  ├── labels/train/   labels/val/
-  └── dataset.yaml
-
-Cách dùng:
-  python scripts/convert_gt_to_yolo.py --src data/train_front data/train_back
-  python scripts/convert_gt_to_yolo.py --src data/train_front data/train_back --val_ratio 0.2
-"""
-
 import json
 import shutil
 import random
@@ -30,15 +7,15 @@ import numpy as np
 from pathlib import Path
 import cv2
 
-# Import order_corners từ src
+# Đảm bảo PYTHONPATH trỏ đúng vào thư mục gốc của dự án
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src.utils.corner_utils import order_corners
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Hàm hỗ trợ tính toán tọa độ và định dạng nhãn ──────────────────────────────
 
 def corners_to_bbox(corners: list, img_w: int, img_h: int):
-    """Tính bbox (cx, cy, w, h) normalize từ 4 góc pixel."""
+    """Tính toán bounding box chuẩn hóa (cx, cy, w, h) từ 4 góc pixel."""
     pts = np.array(corners, dtype=np.float32)
     x_min, y_min = pts[:, 0].min(), pts[:, 1].min()
     x_max, y_max = pts[:, 0].max(), pts[:, 1].max()
@@ -50,10 +27,7 @@ def corners_to_bbox(corners: list, img_w: int, img_h: int):
 
 
 def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
-    """
-    YOLO-OBB format: class_id x1 y1 x2 y2 x3 y3 x4 y4
-    Giữ nguyên thứ tự [TL, TR, BR, BL] nội tại của thẻ.
-    """
+    """Chuyển đổi 4 góc pixel sang định dạng YOLO-OBB: class_id x1 y1 x2 y2 x3 y3 x4 y4 (chuẩn hóa [0,1])."""
     pts = np.array(corners, dtype=np.float32)  # [TL, TR, BR, BL]
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     coords = " ".join(f"{x:.6f} {y:.6f}" for x, y in normalized)
@@ -61,14 +35,7 @@ def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
 
 
 def corners_to_pose_label(corners: list, img_w: int, img_h: int) -> str:
-    """
-    YOLO-Pose format: class_id cx cy w h  x1 y1 v1  x2 y2 v2  x3 y3 v3  x4 y4 v4
-    Keypoint order: [TL, TR, BR, BL] chuẩn theo khung thẻ.
-
-    QUAN TRỌNG: Không dùng order_corners() làm biến đổi thứ tự theo canvas.
-    Giữ nguyên Keypoint 0=TL, Keypoint 1=TR, Keypoint 2=BR, Keypoint 3=BL của chiếc thẻ
-    để mô hình YOLO-Pose học đúng ngữ nghĩa không gian của góc thẻ ở mọi hướng xoay.
-    """
+    """Chuyển đổi 4 góc pixel sang định dạng YOLO-Pose: class_id cx cy w h x1 y1 v1 x2 y2 v2 x3 y3 v3 x4 y4 v4."""
     pts = np.array(corners, dtype=np.float32)  # (4,2) [TL,TR,BR,BL]
     cx, cy, bw, bh = corners_to_bbox(pts.tolist(), img_w, img_h)
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
@@ -77,17 +44,20 @@ def corners_to_pose_label(corners: list, img_w: int, img_h: int) -> str:
 
 
 def get_image_size(img_path: Path):
+    """Đọc kích thước chiều rộng (w) và chiều cao (h) của ảnh từ đường dẫn file."""
     img = cv2.imread(str(img_path))
     if img is None:
-        return 900, 900  # fallback canvas size
+        return 900, 900  # Kích thước mặc định phòng trường hợp không đọc được ảnh
     return img.shape[1], img.shape[0]  # w, h
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# ── Hàm xử lý chuyển đổi chính ──────────────────────────────────────────────────
 
 def convert_sources(src_dirs: list, obb_out: str, pose_out: str, val_ratio: float):
-    all_items = []  # list of (img_path, corners, is_occluded)
+    """Chuyển đổi toàn bộ nhãn GT trong các thư mục nguồn sang tập dữ liệu YOLO-OBB và YOLO-Pose."""
+    all_items = []  # Danh sách lưu các phần tử (img_path, corners, is_occluded)
 
+    # Đọc và gom tất cả ảnh từ các thư mục nguồn có gt_annotations.json
     for src_dir in src_dirs:
         src = Path(src_dir)
         gt_path = src / "gt_annotations.json"
@@ -105,13 +75,14 @@ def convert_sources(src_dirs: list, obb_out: str, pose_out: str, val_ratio: floa
 
     print(f"\nTổng số ảnh thu thập được: {len(all_items)}")
 
-    # Shuffle & split train/val
+    # Xáo trộn và phân chia tập dữ liệu thành train / val theo tỷ lệ
     random.shuffle(all_items)
     n_val   = int(len(all_items) * val_ratio)
-    val_items   = all_items[:n_val]
-    train_items = all_items[n_val:]
+    val_items   = all_items[n_val:]
+    train_items = all_items[:n_val]
     print(f"  Train: {len(train_items)} | Val: {len(val_items)}")
 
+    # Tạo thư mục và xuất dữ liệu cho từng task (OBB và Pose)
     for task, out_dir in [("obb", Path(obb_out)), ("pose", Path(pose_out))]:
         for split, items in [("train", train_items), ("val", val_items)]:
             img_dir = out_dir / "images" / split
@@ -120,16 +91,18 @@ def convert_sources(src_dirs: list, obb_out: str, pose_out: str, val_ratio: floa
             lbl_dir.mkdir(parents=True, exist_ok=True)
 
             for img_path, corners, is_occluded in items:
-                # Đặt tên file unique để tránh trùng giữa front/back
-                src_name = img_path.parent.parent.name  # e.g. "train_front"
+                # Đặt tên file duy nhất để tránh trùng lập giữa các bộ nguồn
+                src_name = img_path.parent.parent.name  # Ví dụ: "train_front"
                 new_stem = f"{src_name}__{img_path.parent.name}__{img_path.stem}"
                 dst_img  = img_dir / f"{new_stem}.jpg"
                 dst_lbl  = lbl_dir / f"{new_stem}.txt"
 
+                # Sao chép file ảnh
                 shutil.copy2(img_path, dst_img)
 
                 img_w, img_h = get_image_size(img_path)
 
+                # Chuyển đổi định dạng nhãn theo loại mô hình (OBB hoặc Pose)
                 if task == "obb":
                     label_line = corners_to_obb_label(corners, img_w, img_h)
                 else:
@@ -137,7 +110,7 @@ def convert_sources(src_dirs: list, obb_out: str, pose_out: str, val_ratio: floa
 
                 dst_lbl.write_text(label_line + "\n", encoding="utf-8")
 
-        # Tạo dataset.yaml
+        # Tạo file cấu hình dataset.yaml cho YOLO
         if task == "pose":
             kpt_cfg = (
                 "\nkpt_shape: [4, 3]  # 4 keypoints, mỗi kpt có (x, y, visibility)"
@@ -161,6 +134,7 @@ names: ['id_card']
 
 
 if __name__ == "__main__":
+    # Đọc tham số dòng lệnh
     parser = argparse.ArgumentParser()
     parser.add_argument("--src",       nargs="+", required=True,
                         help="Thư mục train (vd: data/train_front data/train_back)")
