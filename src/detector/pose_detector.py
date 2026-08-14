@@ -54,10 +54,14 @@ class PoseDetector(BaseDetector):
                 is_occluded=True,
             )
 
-        # ── Khối 2: Trích xuất tọa độ pixel và độ tin cậy của từng keypoint góc ──
+        # ── Khối 2: Trích xuất tọa độ pixel, class_id và bbox từ boxes của detection tốt nhất ──
+        boxes = results[0].boxes
+        box_conf    = float(boxes.conf[0].cpu()) if len(boxes) > 0 else 0.0
+        class_id    = int(boxes.cls[0].cpu())    if len(boxes) > 0 else -1
+        bbox_xyxy   = boxes.xyxy[0].cpu().numpy().astype(np.float32) if len(boxes) > 0 else None
+
         xy = kpts.xy[0].cpu().numpy()          # Shape (N, 2)
         conf_per_kpt = kpts.conf[0].cpu().numpy() if kpts.conf is not None else None
-        box_conf = float(results[0].boxes.conf[0].cpu()) if len(results[0].boxes) > 0 else 0.0
 
         # Kiểm tra điều kiện số lượng keypoints đủ 4 góc thẻ
         if len(xy) != 4:
@@ -86,6 +90,8 @@ class PoseDetector(BaseDetector):
         return DetectionResult(
             corners=corners.astype(np.float32),
             confidence=box_conf,
+            class_id=class_id,
+            bbox_xyxy=bbox_xyxy,
             angle_deg=angle,
             aspect_ratio=aspect,
             is_occluded=is_occluded,

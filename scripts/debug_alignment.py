@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.aligner.perspective_aligner import PerspectiveAligner
+from src.utils.vis_utils import draw_detection_result
 
 IMG_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -98,9 +99,6 @@ def main():
     detector = load_detector(args.detector, weights_path)
     aligner  = PerspectiveAligner(target_width=856, target_height=540)
 
-    labels = ["TL", "TR", "BR", "BL"]
-    colors = [(0, 255, 0), (255, 0, 0), (0, 0, 255), (0, 255, 255)]
-
     # Duyệt và xử lý từng ảnh
     for img_path in images:
         image = cv2.imread(str(img_path))
@@ -115,14 +113,9 @@ def main():
 
         corners = result.corners
 
-        # ── Khối 1: Vẽ 4 điểm góc và đường viền bao quanh thẻ lên ảnh gốc ──
-        vis = image.copy()
-        pts = corners.astype(np.int32)
-        cv2.polylines(vis, [pts.reshape(-1, 1, 2)], True, (0, 200, 0), 3)
-        for i, (pt, label, color) in enumerate(zip(pts, labels, colors)):
-            cv2.circle(vis, tuple(pt), 10, color, -1)
-            cv2.putText(vis, f"{label}", (pt[0] + 12, pt[1] - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        # ── Khối 1: Vẽ kết quả detection theo đúng format mentor ──
+        #    (class_name + confidence + bbox + 4 keypoints)
+        vis = draw_detection_result(image, result, show_corner_labels=True)
 
         # ── Khối 2: Thực hiện warp perspective để nắn thẳng thẻ ──
         aligned = aligner.align(image, corners)
@@ -133,13 +126,13 @@ def main():
         scale  = h_orig / h_ali
         aligned_resized = cv2.resize(aligned, (int(aligned.shape[1] * scale), h_orig))
 
-        divider = np.full((h_orig, 6, 3), 255, dtype=np.uint8)
+        divider  = np.full((h_orig, 6, 3), 255, dtype=np.uint8)
         combined = np.hstack([vis, divider, aligned_resized])
 
         # Lưu ảnh kết quả debug ghép cạnh nhau
         save_path = out_dir / f"debug_{img_path.stem}.jpg"
         cv2.imwrite(str(save_path), combined, [cv2.IMWRITE_JPEG_QUALITY, 92])
-        print(f"  ✅ Saved: {save_path.name} (conf={result.confidence:.2f})")
+        print(f"  ✅ {img_path.name}  class={result.class_name}  conf={result.confidence:.2f}")
 
     print(f"\n🎉 Hoàn thành! Kiểm tra ảnh debug tại: {out_dir.resolve()}\n")
 
