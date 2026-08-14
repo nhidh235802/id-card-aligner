@@ -34,13 +34,18 @@ def corners_to_obb_label(corners: list, img_w: int, img_h: int) -> str:
     return f"0 {coords}"
 
 
-def corners_to_pose_label(corners: list, img_w: int, img_h: int) -> str:
-    """Chuyển đổi 4 góc pixel sang định dạng YOLO-Pose: class_id cx cy w h x1 y1 v1 x2 y2 v2 x3 y3 v3 x4 y4 v4."""
+def corners_to_pose_label(corners: list, img_w: int, img_h: int,
+                           class_id: int = 0) -> str:
+    """Chuyển đổi 4 góc pixel sang định dạng YOLO-Pose keypoint.
+
+    Format: <class_id> <cx> <cy> <w> <h>  <x1> <y1> <v1>  <x2> <y2> <v2>  <x3> <y3> <v3>  <x4> <y4> <v4>
+    class_id mặc định = 0 để giữ tương thích ngược với code cũ.
+    """
     pts = np.array(corners, dtype=np.float32)  # (4,2) [TL,TR,BR,BL]
     cx, cy, bw, bh = corners_to_bbox(pts.tolist(), img_w, img_h)
     normalized = pts / np.array([img_w, img_h], dtype=np.float32)
     kpt_str = "  ".join(f"{x:.6f} {y:.6f} 2" for x, y in normalized)
-    return f"0 {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}  {kpt_str}"
+    return f"{class_id} {cx:.6f} {cy:.6f} {bw:.6f} {bh:.6f}  {kpt_str}"
 
 
 def get_image_size(img_path: Path):

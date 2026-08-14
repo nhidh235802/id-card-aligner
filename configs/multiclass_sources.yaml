@@ -1,0 +1,83 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# configs/multiclass_sources.yaml
+# Cấu hình nguồn dữ liệu cho build_multiclass_dataset.py
+#
+# Mỗi entry trong `sources` định nghĩa 1 nguồn sinh data cho 1 class cụ thể.
+# Script sẽ đọc file này để biết cần sinh synthetic từ template nào,
+# gán class_id nào, và bao nhiêu ảnh mỗi category.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Đường dẫn output dataset (YOLO format)
+output_dir: "data/yolo_multiclass"
+
+# Số ảnh sinh ra mỗi category augmentation (per template)
+# 6 categories × samples_per_category = tổng ảnh/class
+samples_train: 60   # ảnh train mỗi category
+samples_val:   20   # ảnh val mỗi category
+
+# ─── Danh sách nguồn dữ liệu ─────────────────────────────────────────────────
+# class_id phải khớp với CLASS_NAMES trong src/detector/base.py
+#
+# template_front: đường dẫn ảnh thẻ mặt trước (phẳng, chuẩn)
+# template_back:  đường dẫn ảnh thẻ mặt sau  (phẳng, chuẩn)
+#                 Nếu không có mặt sau, bỏ qua dòng template_back
+# class_id_front: class_id cho mặt trước
+# class_id_back:  class_id cho mặt sau
+# enabled: true/false — bật/tắt nguồn này khi build
+# ─────────────────────────────────────────────────────────────────────────────
+
+sources:
+
+  # CCCD chip — mặt trước (cccd_mt_c) + mặt sau (cccd_ms_c)
+  - name: "cccd_chip"
+    enabled: true
+    template_front: "assets/samples/cccd_chip_front.jpg"
+    template_back:  "assets/samples/cccd_chip_back.jpg"
+    class_id_front: 3   # cccd_mt_c
+    class_id_back:  2   # cccd_ms_c
+
+  # CCCD magnetic — mặt trước (cccd_mt_m) + mặt sau (cccd_ms_m)
+  # Dùng lại clean_front/back từ pipeline cũ nếu chúng là loại magnetic
+  - name: "cccd_magnetic"
+    enabled: true
+    template_front: "assets/samples/clean_front.jpg"
+    template_back:  "assets/samples/clean_back.jpg"
+    class_id_front: 5   # cccd_mt_m
+    class_id_back:  4   # cccd_ms_m
+
+  # Singapore FIN card — mặt trước + mặt sau
+  # (điền đường dẫn sau khi có clean template từ Roboflow + prepare_clean_card.py)
+  - name: "singapore_fin"
+    enabled: false      # ← tắt cho đến khi có template
+    template_front: "assets/samples/sg_fin_front.jpg"
+    template_back:  "assets/samples/sg_fin_back.jpg"
+    class_id_front: 12  # sg_mt
+    class_id_back:  13  # sg_ms
+
+  # CMND cũ chip — thêm vào đây khi có data
+  - name: "cmnd_chip"
+    enabled: false
+    template_front: "assets/samples/cmnd_chip_front.jpg"
+    template_back:  "assets/samples/cmnd_chip_back.jpg"
+    class_id_front: 1   # cmnd_mt_c
+    class_id_back:  0   # cmnd_ms_c
+
+
+# ─── Cấu hình dataset.yaml đầu ra ────────────────────────────────────────────
+# Danh sách đầy đủ 14 class (khớp với mentor spec)
+# Class nào không có data sẽ vẫn được khai báo nhưng không có ảnh train
+class_names:
+  0: cmnd_ms_c
+  1: cmnd_mt_c
+  2: cccd_ms_c
+  3: cccd_mt_c
+  4: cccd_ms_m
+  5: cccd_mt_m
+  6: blx_ms
+  7: blx_mt
+  8: hc_mt
+  9: other
+  10: print
+  11: hc_nn
+  12: sg_mt
+  13: sg_ms
