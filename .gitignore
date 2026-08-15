@@ -30,8 +30,8 @@ data/synthetic_testset_front/
 data/synthetic_testset_back/
 data/yolo_obb/
 data/yolo_pose/
-data_new/
 data_new/*
+data_multiclasses/*
 *.jpg
 *.jpeg
 *.png
