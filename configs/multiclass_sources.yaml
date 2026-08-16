@@ -51,8 +51,8 @@ sources:
     enabled: false      # ← tắt cho đến khi có template
     template_front: "assets/samples/sg_fin_front.jpg"
     template_back:  "assets/samples/sg_fin_back.jpg"
-    class_id_front: 12  # sg_mt
-    class_id_back:  13  # sg_ms
+    class_id_front: 12  # sgp_mt
+    class_id_back:  13  # sgp_ms
 
   # CMND cũ chip — thêm vào đây khi có data
   - name: "cmnd_chip"
