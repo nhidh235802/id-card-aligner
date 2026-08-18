@@ -2,25 +2,43 @@ import argparse
 from pathlib import Path
 
 MODEL_MAP = {
-    "obb": {
-        "nano":   "yolo11n-obb.pt",
-        "small":  "yolo11s-obb.pt",
-        "medium": "yolo11m-obb.pt",
+    "yolo11": {
+        "obb": {
+            "nano":   "yolo11n-obb.pt",
+            "small":  "yolo11s-obb.pt",
+            "medium": "yolo11m-obb.pt",
+        },
+        "pose": {
+            "nano":   "yolo11n-pose.pt",
+            "small":  "yolo11s-pose.pt",
+            "medium": "yolo11m-pose.pt",
+        },
     },
-    "pose": {
-        "nano":   "yolo11n-pose.pt",
-        "small":  "yolo11s-pose.pt",
-        "medium": "yolo11m-pose.pt",
+    "yolo26": {
+        "obb": {
+            "nano":   "yolo26n-obb.pt",
+            "small":  "yolo26s-obb.pt",
+            "medium": "yolo26m-obb.pt",
+            "large":  "yolo26l-obb.pt",
+            "xlarge": "yolo26x-obb.pt",
+        },
+        "pose": {
+            "nano":   "yolo26n-pose.pt",
+            "small":  "yolo26s-pose.pt",
+            "medium": "yolo26m-pose.pt",
+            "large":  "yolo26l-pose.pt",
+            "xlarge": "yolo26x-pose.pt",
+        },
     },
 }
 
 
-def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int):
+def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int, family: str = "yolo11"):
     """Huấn luyện tinh chỉnh (fine-tune) mô hình YOLO-OBB cho nhiệm vụ phát hiện bounding box định hướng của thẻ."""
     from ultralytics import YOLO
 
     # Nạp weights tương ứng từ preset
-    weights = MODEL_MAP["obb"][model_size]
+    weights = MODEL_MAP[family]["obb"][model_size]
     print(f"\n{'='*55}")
     print(f"  Fine-tune YOLO-OBB | model={weights} | epochs={epochs}")
     print(f"{'='*55}")
@@ -50,12 +68,12 @@ def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz:
     return best_weights
 
 
-def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int):
+def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz: int, family: str = "yolo11"):
     """Huấn luyện tinh chỉnh (fine-tune) mô hình YOLO-Pose cho nhiệm vụ phát hiện 4 keypoints góc thẻ."""
     from ultralytics import YOLO
 
     # Nạp weights tương ứng từ preset
-    weights = MODEL_MAP["pose"][model_size]
+    weights = MODEL_MAP[family]["pose"][model_size]
     print(f"\n{'='*55}")
     print(f"  Fine-tune YOLO-Pose | model={weights} | epochs={epochs}")
     print(f"{'='*55}")
@@ -94,9 +112,11 @@ if __name__ == "__main__":
     # Đọc tham số từ dòng lệnh
     parser = argparse.ArgumentParser(description="Fine-tune YOLO-OBB và YOLO-Pose cho thẻ CCCD")
     parser.add_argument("--task",        choices=["obb", "pose", "both"], default="both")
-    parser.add_argument("--model",       choices=["nano", "small", "medium"], default="nano",
-                        help="Kích thước model (nano=nhanh nhất, medium=chính xác nhất)")
-    parser.add_argument("--epochs",      type=int, default=50)
+    parser.add_argument("--family",      choices=["yolo11", "yolo26"], default="yolo26",
+                        help="Họ model (yolo11 hoặc yolo26, mặc định: yolo26)")
+    parser.add_argument("--model",       choices=["nano", "small", "medium", "large", "xlarge"], default="nano",
+                        help="Kích thước model (nano→xlarge, mặc định: nano)")
+    parser.add_argument("--epochs",      type=int, default=100)
     parser.add_argument("--imgsz",       type=int, default=640)
     parser.add_argument("--obb_data",    default=obb_default)
     parser.add_argument("--pose_data",   default=pose_default)
@@ -104,9 +124,14 @@ if __name__ == "__main__":
     parser.add_argument("--pose_project", default=pose_proj_default)
     args = parser.parse_args()
 
+    # Kiểm tra model size hợp lệ cho family
+    if args.model in ("large", "xlarge") and args.family == "yolo11":
+        print(f"WARNING: yolo11 chi co nano/small/medium. Tu dong chuyen sang medium.")
+        args.model = "medium"
+
     # Điều hướng thực thi huấn luyện mô hình được lựa chọn
     if args.task in ("obb", "both"):
-        train_obb(args.epochs, args.model, args.obb_data, args.obb_project, args.imgsz)
+        train_obb(args.epochs, args.model, args.obb_data, args.obb_project, args.imgsz, args.family)
 
     if args.task in ("pose", "both"):
-        train_pose(args.epochs, args.model, args.pose_data, args.pose_project, args.imgsz)
+        train_pose(args.epochs, args.model, args.pose_data, args.pose_project, args.imgsz, args.family)
