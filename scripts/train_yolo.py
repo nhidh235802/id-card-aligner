@@ -49,7 +49,7 @@ def train_obb(epochs: int, model_size: str, data_yaml: str, project: str, imgsz:
         data=data_yaml,
         epochs=epochs,
         imgsz=imgsz,
-        batch=16,
+        batch=-1,
         patience=10,           # Dừng sớm (early stopping) nếu không cải thiện sau 10 epoch
         project=project,
         name="obb_finetune",
@@ -84,7 +84,7 @@ def train_pose(epochs: int, model_size: str, data_yaml: str, project: str, imgsz
         data=data_yaml,
         epochs=epochs,
         imgsz=imgsz,
-        batch=16,
+        batch=-1,
         patience=10,
         project=project,
         name="pose_finetune",
