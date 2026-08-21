@@ -71,12 +71,25 @@ class PoseDetector(BaseDetector):
                 is_occluded=True,
             )
 
-        # ── Khối 3: Xử lý che khuất (Occlusion Handling) cho điểm góc có độ tin cậy thấp ──
-        is_occluded = bool(np.any(conf_per_kpt < self.occlusion_min_conf))
-        if is_occluded:
-            xy = handle_missing_corners(xy, conf_per_kpt, self.occlusion_min_conf)
+        # ── Khối 3: Xử lý lọc keypoint confidence & Fallback ──
+        is_occluded = False
+        if conf_per_kpt is not None:
+            is_occluded = bool(np.any(conf_per_kpt < self.occlusion_min_conf))
+            if is_occluded:
+                xy_refined, is_valid = handle_missing_corners(xy, conf_per_kpt, threshold=self.occlusion_min_conf)
+                if not is_valid:
+                    # Nếu có >= 2 góc bị kém/không tin cậy -> Không thể nắn an toàn -> Báo lỗi/Từ chối nắn
+                    return DetectionResult(
+                        corners=np.zeros((4, 2), dtype=np.float32),
+                        confidence=0.0,
+                        class_id=class_id,
+                        bbox_xyxy=bbox_xyxy,
+                        is_occluded=True,
+                        corner_confidences=conf_per_kpt,
+                    )
+                xy = xy_refined
 
-        # Giữ nguyên thứ tự không gian học được từ nhãn Pose [TL, TR, BR, BL]
+        # Giữ thứ tự 4 góc [TL, TR, BR, BL]
         corners = xy.astype(np.float32)
 
         # ── Khối 4: Tinh chỉnh vị trí góc mức dưới pixel (Sub-pixel Refinement) ──
