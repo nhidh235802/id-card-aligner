@@ -1,87 +1,81 @@
 import numpy as np
 
-# Tỷ lệ khung hình thẻ CCCD chuẩn (Width / Height)
-CCCD_ASPECT_RATIO = 85.6 / 54.0
+# Tỷ lệ khung hình thẻ ID-1 chuẩn (Width / Height)
+CCCD_ASPECT_RATIO = 85.6 / 54.0  # ≈ 1.585185
 
 
 def handle_missing_corners(
     corners: np.ndarray,
     confidences: np.ndarray,
-    threshold: float = 0.3,
-) -> np.ndarray:
-    """Ước tính lại các vị trí điểm góc bị mất hoặc bị ngón tay che khuất (confidence < threshold)."""
-    pts = corners.copy()
+    threshold: float = 0.4,
+) -> tuple[np.ndarray, bool]:
+    """Khôi phục điểm góc bị thiếu dựa trên 3 điểm có confidence cao.
+
+    Args:
+        corners: Mảng (4, 2) tọa độ [TL, TR, BR, BL]
+        confidences: Mảng (4,) độ tin cậy của từng keypoint [0.0, 1.0]
+        threshold: Ngưỡng confidence tối thiểu để tin cậy một keypoint (mặc định 0.4)
+
+    Returns:
+        tuple (refined_corners: np.ndarray, is_valid: bool)
+        - is_valid = True: Đủ điều kiện khôi phục (0 hoặc 1 góc bị thiếu)
+        - is_valid = False: Quá 1 góc bị thiếu (>= 2 góc kém), từ chối warp để tránh méo ảnh.
+    """
+    pts = corners.copy().astype(np.float32)
+
+    if confidences is None:
+        return pts, True
+
     missing = confidences < threshold
     n_missing = int(missing.sum())
 
-    # Nếu không có góc nào bị che -> giữ nguyên
+    # Trường hợp 0: Cả 4 góc đều tin cậy -> Giữ nguyên
     if n_missing == 0:
-        return pts
-    # Nếu bị che nhiều hơn 2 góc -> không thể khôi phục an toàn, trả về nguyên bản
-    if n_missing > 2:
-        return pts
+        return pts, True
 
-    visible_idx = np.where(~missing)[0]
-
-    # Trường hợp 1: Bị che 1 góc -> tính toán lại từ 3 góc còn lại
+    # Trường hợp 1: Đúng 1 góc bị thiếu/kém -> Ước tính từ 3 góc còn lại
     if n_missing == 1:
         lost_idx = int(np.where(missing)[0][0])
+        visible_idx = np.where(~missing)[0]
         pts[lost_idx] = _estimate_one_corner(pts, lost_idx, visible_idx)
 
-    # Trường hợp 2: Bị che 2 góc -> ước tính từ cạnh đối diện và tỷ lệ aspect ratio
-    elif n_missing == 2:
-        lost_idx = list(np.where(missing)[0])
-        pts = _estimate_two_corners(pts, lost_idx, visible_idx)
+        # Kiểm tra hình học góc suy ra có hợp lệ không (tỷ lệ aspect ratio hợp lý)
+        aspect = _compute_aspect_ratio_simple(pts)
+        if 1.0 <= aspect <= 2.5:
+            return pts, True
+        else:
+            # Tỷ lệ biến dạng quá mức -> không hợp lệ
+            return pts, False
 
-    return pts
+    # Trường hợp 2: Bị thiếu >= 2 góc -> Từ chối nắn ảnh (tránh nắn ra ảnh méo vô nghĩa)
+    return pts, False
 
 
 def _estimate_one_corner(
     pts: np.ndarray, lost: int, visible: np.ndarray
 ) -> np.ndarray:
-    """Ước tính vị trí 1 góc bị mất dựa vào tính chất hình bình hành (TL + BR = TR + BL)."""
-    idx_map = {0: (1, 3, 2), 1: (0, 2, 3), 2: (3, 1, 0), 3: (2, 0, 1)}
+    """Ước tính vị trí 1 góc bị thiếu dựa trên quy tắc hình bình hành (TL + BR = TR + BL)."""
+    # 0: TL, 1: TR, 2: BR, 3: BL
+    # TL = TR + BL - BR
+    # TR = TL + BR - BL
+    # BR = TR + BL - TL
+    # BL = TL + BR - TR
+    idx_map = {
+        0: (1, 3, 2),  # TL = TR + BL - BR
+        1: (0, 2, 3),  # TR = TL + BR - BL
+        2: (1, 3, 0),  # BR = TR + BL - TL
+        3: (0, 2, 1),  # BL = TL + BR - TR
+    }
     a, b, c = idx_map[lost]
-    # Công thức quy tắc hình bình hành: Góc mất = a + c - b
-    return pts[a] + pts[c] - pts[b]
+    return pts[a] + pts[b] - pts[c]
 
 
-def _estimate_two_corners(
-    pts: np.ndarray, lost: list, visible: list
-) -> np.ndarray:
-    """Ước tính 2 góc bị mất trên cùng 1 cạnh bằng cách dịch chuyển vector cạnh đối diện theo tỷ lệ CCCD_ASPECT_RATIO."""
-    same_edge_pairs = [(0, 1), (2, 3), (0, 3), (1, 2)]
-    lost_set = set(lost)
-
-    for pair in same_edge_pairs:
-        if lost_set == set(pair):
-            opp = [i for i in range(4) if i not in pair]
-            v0, v1 = pts[opp[0]], pts[opp[1]]
-
-            h_vec = (v0 + v1) / 2
-
-            # Khối tính độ dài cạnh đối diện và suy ra khoảng cách chiều cao cần dịch chuyển
-            if pair == (0, 1):
-                shift = v0 - v1
-                pts[0] = v0 - (v1 - v0) * 0
-                edge_len = np.linalg.norm(v1 - v0)
-                h_est = edge_len / CCCD_ASPECT_RATIO
-                normal = _perpendicular_unit(v1 - v0)
-                pts[pair[0]] = v0 - normal * h_est
-                pts[pair[1]] = v1 - normal * h_est
-            else:
-                edge_len = np.linalg.norm(v1 - v0)
-                h_est = edge_len / CCCD_ASPECT_RATIO
-                normal = _perpendicular_unit(v1 - v0)
-                pts[pair[0]] = v0 + normal * h_est
-                pts[pair[1]] = v1 + normal * h_est
-            break
-
-    return pts
-
-
-def _perpendicular_unit(v: np.ndarray) -> np.ndarray:
-    """Tính toán và trả về vector đơn vị vuông góc với vector v (xoay 90° ngược chiều kim đồng hồ)."""
-    perp = np.array([-v[1], v[0]], dtype=np.float64)
-    norm = np.linalg.norm(perp)
-    return perp / norm if norm > 0 else perp
+def _compute_aspect_ratio_simple(corners: np.ndarray) -> float:
+    """Tính tỷ lệ w/h đơn giản của 4 góc."""
+    top_w   = np.linalg.norm(corners[1] - corners[0])
+    bot_w   = np.linalg.norm(corners[2] - corners[3])
+    left_h  = np.linalg.norm(corners[3] - corners[0])
+    right_h = np.linalg.norm(corners[2] - corners[1])
+    avg_w = (top_w + bot_w) / 2.0
+    avg_h = (left_h + right_h) / 2.0
+    return float(avg_w / avg_h) if avg_h > 0 else 0.0
