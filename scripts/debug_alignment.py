@@ -24,7 +24,7 @@ OLD_WEIGHTS = {
 # Trọng số của phiên bản mới (NEW)
 NEW_WEIGHTS = {
     "obb": "runs/obb/runs_new/obb_finetune/weights/best.pt",
-    "pose": "runs/pose/runs_new/pose_finetune/weights/best.pt",
+    "pose": "C:/Users/Admin/ket-qua-train-mixed-v1/weights/best.pt",
 }
 
 
@@ -60,6 +60,9 @@ def main():
     parser.add_argument("--detector", choices=["obb", "pose", "classical"], default="obb", help="Loại detector")
     parser.add_argument("--weights", default=None, help="Ghi đè đường dẫn weights")
     parser.add_argument("--num", type=int, default=30, help="Số lượng ảnh tối đa")
+    parser.add_argument("--show_fail", action="store_true",
+                        help="Lưu cả ảnh bị SKIP (box OK nhưng kpt conf thấp) — dùng cho báo cáo")
+    parser.add_argument("--out_dir", default=None, help="Thư mục xuất ảnh (mặc định: outputs/debug_align_{ver})")
     args = parser.parse_args()
 
     version = args.ver.lower()
@@ -83,7 +86,7 @@ def main():
         return
 
     folder = Path(args.folder)
-    out_dir = Path(f"outputs/debug_align_{version}")
+    out_dir = Path(args.out_dir) if args.out_dir else Path(f"outputs/debug_align_{version}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Lấy danh sách đường dẫn các ảnh cần chạy debug
@@ -107,32 +110,70 @@ def main():
 
         # Phát hiện 4 góc thẻ
         result = detector.detect(image)
-        if result.confidence < 0.3:
-            print(f"  ❌ SKIP {img_path.name} (conf={result.confidence:.2f} < 0.3)")
-            continue
+        box_conf  = result.confidence
+        no_box    = box_conf < 0.10 or np.all(result.corners == 0)
 
-        corners = result.corners
+        # Chế độ thông thường: bỏ qua nếu conf thấp hoặc bị che
+        if not args.show_fail:
+            if box_conf < 0.25 or np.all(result.corners == 0):
+                print(f"  ❌ SKIP {img_path.name}: conf={result.confidence:.2f}, occluded={result.is_occluded}")
+                continue
 
-        # ── Khối 1: Vẽ kết quả detection theo đúng format mentor ──
-        #    (class_name + confidence + bbox + 4 keypoints)
-        vis = draw_detection_result(image, result, show_corner_labels=True)
+            corners = result.corners
+            vis = draw_detection_result(image, result, show_corner_labels=True)
+            aligned = aligner.align(image, corners)
 
-        # ── Khối 2: Thực hiện warp perspective để nắn thẳng thẻ ──
-        aligned = aligner.align(image, corners)
+            h_orig = vis.shape[0]
+            scale  = h_orig / aligned.shape[0]
+            aligned_resized = cv2.resize(aligned, (int(aligned.shape[1] * scale), h_orig))
+            divider  = np.full((h_orig, 6, 3), 255, dtype=np.uint8)
+            combined = np.hstack([vis, divider, aligned_resized])
 
-        # ── Khối 3: Căn chỉnh chiều cao và ghép ảnh gốc + ảnh nắn thẳng cạnh nhau ──
-        h_orig = vis.shape[0]
-        h_ali  = aligned.shape[0]
-        scale  = h_orig / h_ali
-        aligned_resized = cv2.resize(aligned, (int(aligned.shape[1] * scale), h_orig))
+            save_path = out_dir / f"debug_{img_path.stem}.jpg"
+            cv2.imwrite(str(save_path), combined, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            print(f"  ✅ {img_path.name}  class={result.class_name}  conf={result.confidence:.2f}")
 
-        divider  = np.full((h_orig, 6, 3), 255, dtype=np.uint8)
-        combined = np.hstack([vis, divider, aligned_resized])
+        else:
+            # ── Chế độ --show_fail: luôn vẽ kết quả để minh hoạ cho báo cáo ──
+            if no_box:
+                print(f"  ⛔ NO-BOX {img_path.name}: box_conf={box_conf:.2f}")
+                continue
 
-        # Lưu ảnh kết quả debug ghép cạnh nhau
-        save_path = out_dir / f"debug_{img_path.stem}.jpg"
-        cv2.imwrite(str(save_path), combined, [cv2.IMWRITE_JPEG_QUALITY, 92])
-        print(f"  ✅ {img_path.name}  class={result.class_name}  conf={result.confidence:.2f}")
+            vis = draw_detection_result(image, result, show_corner_labels=True)
+
+            # Lấy keypoint conf trực tiếp từ raw result nếu có
+            kpt_min_conf = 0.0
+            if hasattr(result, '_raw_kpt_conf') and result._raw_kpt_conf is not None:
+                kpt_min_conf = float(result._raw_kpt_conf.min())
+            elif hasattr(result, 'corner_confidences') and result.corner_confidences is not None and len(result.corner_confidences) > 0:
+                kpt_min_conf = float(np.min(result.corner_confidences))
+
+            # Ghi nhãn trạng thái lên góc trên ảnh
+            is_bad_kpt = result.is_occluded or np.all(result.corners == 0)
+            status_txt = (f"BOX OK ({box_conf:.2f}) | KPT FAIL (kpt_conf_min={kpt_min_conf:.2f})"
+                          if is_bad_kpt
+                          else f"BOX OK ({box_conf:.2f}) | KPT OK")
+            color = (0, 0, 220) if is_bad_kpt else (0, 180, 0)
+            cv2.rectangle(vis, (0, 0), (vis.shape[1], 36), (30, 30, 30), -1)
+            cv2.putText(vis, status_txt, (8, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+
+            # Nếu keypoint tệ: chỉ lưu ảnh phát hiện, không warp
+            if is_bad_kpt:
+                save_path = out_dir / f"fail_{img_path.stem}.jpg"
+                cv2.imwrite(str(save_path), vis, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                print(f"  ⚠️  FAIL-KPT {img_path.name}  box={box_conf:.2f}  kpt_min={kpt_min_conf:.2f}")
+            else:
+                corners = result.corners
+                aligned = aligner.align(image, corners)
+                h_orig = vis.shape[0]
+                scale  = h_orig / aligned.shape[0]
+                aligned_resized = cv2.resize(aligned, (int(aligned.shape[1] * scale), h_orig))
+                divider  = np.full((h_orig, 6, 3), 255, dtype=np.uint8)
+                combined = np.hstack([vis, divider, aligned_resized])
+                save_path = out_dir / f"ok_{img_path.stem}.jpg"
+                cv2.imwrite(str(save_path), combined, [cv2.IMWRITE_JPEG_QUALITY, 92])
+                print(f"  ✅ OK {img_path.name}  box={box_conf:.2f}")
 
     print(f"\n🎉 Hoàn thành! Kiểm tra ảnh debug tại: {out_dir.resolve()}\n")
 
